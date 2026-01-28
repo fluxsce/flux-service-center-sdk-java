@@ -4,7 +4,21 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，并遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
+
+
 ## [Unreleased]（未发布）
+
+### 修复
+- 🐛 **重连时 nodeId 保持不变**
+  - 修复重连后重新注册节点时 nodeId 会变更的问题
+  - `buildNodeProto` 方法现在会传递已有的 nodeId 给服务端
+  - `restoreStateAfterReconnect` 方法重连时保持原有 nodeId，不再生成新的 nodeId
+  - 确保业务方缓存的 nodeId 在重连后仍然有效
+
+### 变更
+- ⚡ **重连状态恢复优化**
+  - 重连时直接调用 `businessHelper.registerNode` 而非 `registerNode` 方法
+  - 避免重连时触发不必要的 nodeId 更新和缓存刷新
 
 ## [2.0.0] - 2026-01-28
 
@@ -96,6 +110,12 @@
 | 1.0.0 | 2025-10-24 | 首次发布，核心功能完整实现 |
 
 ## 升级指南
+
+### 从 2.0.0 升级到 2.0.1
+
+- **完全兼容**：原有 API 无需修改
+- **问题修复**：重连后 nodeId 保持不变，业务方缓存的 nodeId 不会失效
+- **升级步骤**：更新依赖版本即可
 
 ### 从 1.0.0 升级到 2.0.0
 

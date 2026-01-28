@@ -288,43 +288,43 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
     
     /**
      * 重连后恢复状态（重新注册节点和订阅）
+     * 注意：重连时保持原有的 nodeId 不变
      */
     private void restoreStateAfterReconnect() {
         logger.info("开始恢复重连前的状态...");
         
-        // 1. 重新注册所有节点
+        // 1. 重新注册所有节点（保持原有 nodeId）
         if (!registeredNodes.isEmpty()) {
             logger.info("重新注册 {} 个节点...", registeredNodes.size());
             // 创建副本，避免并发修改
             Map<String, NodeInfo> nodesToReregister = new HashMap<>(registeredNodes);
             
             for (Map.Entry<String, NodeInfo> entry : nodesToReregister.entrySet()) {
-                String oldNodeId = entry.getKey();
+                String nodeId = entry.getKey();
                 NodeInfo nodeInfo = entry.getValue();
                 
                 try {
-                    logger.debug("重新注册节点: {} (旧 ID: {})", nodeInfo.getServiceName(), oldNodeId);
+                    logger.debug("重新注册节点: {} (nodeId: {})", nodeInfo.getServiceName(), nodeId);
                     
                     // 停止旧的心跳任务
-                    stopHeartbeat(oldNodeId);
+                    stopHeartbeat(nodeId);
                     
-                    // 从映射中移除旧节点
-                    registeredNodes.remove(oldNodeId);
+                    // 确保 nodeInfo 中有 nodeId（用于重连时传给服务端）
+                    nodeInfo.setNodeId(nodeId);
                     
-                    // 重新注册节点（registerNode 会自动添加到 registeredNodes 并启动心跳）
-                    RegisterNodeResult result = registerNode(nodeInfo);
+                    // 重新注册节点（带上原有的 nodeId）
+                    RegistryProto.Node node = buildNodeProto(nodeInfo, nodeInfo.getServiceName());
+                    RegistryProto.RegisterNodeResponse response = businessHelper.registerNode(node);
                     
-                    if (result.isSuccess()) {
-                        logger.info("节点重新注册成功: {} -> 新 nodeId: {}", oldNodeId, result.getNodeId());
+                    if (response.getSuccess()) {
+                        // 重新启动心跳（使用原有的 nodeId）
+                        startHeartbeat(nodeId);
+                        logger.info("节点重新注册成功: {} (nodeId: {})", nodeInfo.getServiceName(), nodeId);
                     } else {
-                        logger.warn("节点 {} 重新注册失败: {}", oldNodeId, result.getMessage());
-                        // 失败时，将节点信息放回（使用旧 ID）
-                        registeredNodes.put(oldNodeId, nodeInfo);
+                        logger.warn("节点 {} 重新注册失败: {}", nodeId, response.getMessage());
                     }
                 } catch (Exception e) {
-                    logger.error("重新注册节点 {} 失败", oldNodeId, e);
-                    // 异常时，将节点信息放回（使用旧 ID）
-                    registeredNodes.put(oldNodeId, nodeInfo);
+                    logger.error("重新注册节点 {} 失败", nodeId, e);
                 }
             }
         }
@@ -1106,6 +1106,10 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                 .setPortNumber(nodeInfo.getPortNumber())
                 .setWeight(nodeInfo.getWeight() > 0 ? nodeInfo.getWeight() : 100.0); // Model 中 weight 已经是 double
         
+        // 如果有 nodeId（重连场景），传给服务端以保持 nodeId 不变
+        if (nodeInfo.getNodeId() != null && !nodeInfo.getNodeId().isEmpty()) {
+            builder.setNodeId(nodeInfo.getNodeId());
+        }
         if (nodeInfo.getHealthyStatus() != null) {
             builder.setHealthyStatus(nodeInfo.getHealthyStatus());
         }
