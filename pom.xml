@@ -208,8 +208,8 @@
                         <configuration>
                             <!-- gRPC Java 插件 -->
                             <pluginId>grpc-java</pluginId>
-                            <pluginArtifact>io.grpc:protoc-gen-grpc-java:${grpc.version}:exe:${os.detected.classifier}</pluginArtifact>
-                            <!-- gRPC 服务类输出到 grpc-java 目录 -->
+                            <!-- 关键：去掉 :exe:，直接用 classifier,兼容性打包 -->
+                            <pluginArtifact>io.grpc:protoc-gen-grpc-java: $ {grpc.version}: $ {os.detected.classifier}</pluginArtifact><!-- gRPC 服务类输出到 grpc-java 目录 -->
                             <outputDirectory>${project.build.directory}/generated-sources/protobuf/grpc-java</outputDirectory>
                         </configuration>
                     </execution>
