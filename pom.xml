@@ -54,9 +54,10 @@
         <gpg.skip>true</gpg.skip>
         <javadoc.skip>false</javadoc.skip>
         
-        <!-- Dependency versions (Updated 2026-01) -->
-        <grpc.version>1.68.1</grpc.version>
-        <protobuf.version>3.25.5</protobuf.version>
+        <!-- Dependency versions -->
+        <!-- gRPC 1.54.2 兼容 CentOS 7, protobuf 3.25.8 无安全漏洞 -->
+        <grpc.version>1.54.2</grpc.version>
+        <protobuf.version>3.25.8</protobuf.version>
         <slf4j.version>2.0.16</slf4j.version>
         <junit5.version>5.11.3</junit5.version>
         <mockito.version>5.14.2</mockito.version>
@@ -208,8 +209,8 @@
                         <configuration>
                             <!-- gRPC Java 插件 -->
                             <pluginId>grpc-java</pluginId>
-                            <!-- 关键：去掉 :exe:，直接用 classifier,兼容性打包 -->
-                            <pluginArtifact>io.grpc:protoc-gen-grpc-java: $ {grpc.version}: $ {os.detected.classifier}</pluginArtifact><!-- gRPC 服务类输出到 grpc-java 目录 -->
+                            <pluginArtifact>io.grpc:protoc-gen-grpc-java:${grpc.version}:exe:${os.detected.classifier}</pluginArtifact>
+                            <!-- gRPC 服务类输出到 grpc-java 目录 -->
                             <outputDirectory>${project.build.directory}/generated-sources/protobuf/grpc-java</outputDirectory>
                         </configuration>
                     </execution>
