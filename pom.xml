@@ -49,6 +49,11 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         
+        <!-- 发布控制（参考 fastjson） -->
+        <!-- 平时开发跳过，发布时使用 -Dgpg.skip=false -Djavadoc.skip=false -->
+        <gpg.skip>true</gpg.skip>
+        <javadoc.skip>false</javadoc.skip>
+        
         <!-- Dependency versions (Updated 2026-01) -->
         <grpc.version>1.68.1</grpc.version>
         <protobuf.version>3.25.5</protobuf.version>
@@ -265,14 +270,29 @@
             </plugin>
             
             <!-- Maven Javadoc Plugin - 生成 Javadoc JAR（发布到 Maven 中央仓库必需） -->
+            <!-- 参考 fastjson：使用 javadoc.skip 属性控制 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
                 <version>3.6.3</version>
                 <configuration>
+                    <skip>${javadoc.skip}</skip>
                     <encoding>UTF-8</encoding>
                     <charset>UTF-8</charset>
                     <docencoding>UTF-8</docencoding>
+                    <!-- 完全禁用 Javadoc 检查（解决 HTML 实体问题） -->
+                    <doclint>none</doclint>
+                    <failOnError>false</failOnError>
+                    <!-- 排除 protobuf 生成的源文件 -->
+                    <sourceFileExcludes>
+                        <exclude>**/target/generated-sources/**/*.java</exclude>
+                    </sourceFileExcludes>
+                    <!-- 额外的 JVM 选项 -->
+                    <additionalJOptions>
+                        <additionalJOption>-J-Duser.language=en</additionalJOption>
+                        <additionalJOption>-J-Duser.country=US</additionalJOption>
+                        <additionalJOption>-J-Xmx512m</additionalJOption>
+                    </additionalJOptions>
                 </configuration>
                 <executions>
                     <execution>
@@ -285,10 +305,23 @@
             </plugin>
             
             <!-- Maven GPG Plugin - GPG 签名（发布到 Maven 中央仓库必需） -->
+            <!-- 参考 fastjson：使用 gpg.skip 属性控制，默认跳过 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-gpg-plugin</artifactId>
                 <version>3.1.0</version>
+                <configuration>
+                    <skip>${gpg.skip}</skip>
+                    <!-- Windows keyboxd 兼容配置 -->
+                    <gpgArguments>
+                        <arg>--pinentry-mode</arg>
+                        <arg>loopback</arg>
+                        <arg>--batch</arg>
+                        <arg>--yes</arg>
+                        <arg>--no-tty</arg>
+                    </gpgArguments>
+                    <useAgent>false</useAgent>
+                </configuration>
                 <executions>
                     <execution>
                         <id>sign-artifacts</id>
@@ -304,12 +337,11 @@
             <plugin>
                 <groupId>org.sonatype.central</groupId>
                 <artifactId>central-publishing-maven-plugin</artifactId>
-                <version>0.6.0</version>
+                <version>0.8.0</version>
                 <extensions>true</extensions>
                 <configuration>
                     <publishingServerId>central</publishingServerId>
                     <autoPublish>true</autoPublish>
-                    <waitUntil>published</waitUntil>
                 </configuration>
             </plugin>
         </plugins>

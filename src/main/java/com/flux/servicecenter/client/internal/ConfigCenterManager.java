@@ -385,7 +385,7 @@ public class ConfigCenterManager {
      * @param namespaceId 命名空间ID，不能为空
      * @param groupName 分组名，如果为 null 则使用 "DEFAULT_GROUP"
      * @param configDataId 配置标识，不能为空
-     * @param limit 限制返回数量，如果 <= 0 则使用默认值 100
+     * @param limit 限制返回数量，如果 &lt;= 0 则使用默认值 100
      * @return 配置历史列表（领域对象），如果失败则返回空列表
      * @throws IllegalStateException 如果客户端未连接
      * @throws RuntimeException 如果获取失败

@@ -225,7 +225,7 @@ public interface IRegistryService {
      * 获取服务信息（包含所有节点列表）
      * 
      * <p>查询指定服务的详细信息，包括服务元数据和所有节点列表。
-     * 结果包含所有节点（健康和不健康），可通过 {@link GetServiceResult#getHealthyNodes()} 过滤健康节点。</p>
+     * 结果包含所有节点（健康和不健康），可通过业务逻辑过滤健康节点。</p>
      * 
      * <p><b>使用示例：</b></p>
      * <pre>{@code
