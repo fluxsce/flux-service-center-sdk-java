@@ -9,8 +9,7 @@ import com.flux.servicecenter.listener.ServiceChangeListener;
 import com.flux.servicecenter.model.*;
 import com.flux.servicecenter.registry.RegistryProto;
 import com.flux.servicecenter.registry.ServiceRegistryGrpc;
-import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
+import io.grpc.*;
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.netty.shaded.io.netty.handler.ssl.SslContext;
@@ -131,13 +130,16 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
     }
     
     /**
-     * 创建 gRPC Channel（支持 TLS 和集群地址）
+     * 创建 gRPC Channel（支持 TLS、集群地址和认证）
      */
     private ManagedChannel createChannel(ServiceCenterConfig config) {
         try {
             // 判断是否为集群模式（多个地址）
             String serverAddress = config.getServerAddress();
             boolean isClusterMode = serverAddress != null && serverAddress.contains(",");
+            
+            // 注意：认证逻辑已移至 StreamConnectionManager.connect() 中处理
+            // 与 ConnectionManager 保持一致，在 connect 时创建认证元数据
             
             if (!config.isEnableTls()) {
                 // ========== 明文通信（不使用 TLS） ==========
@@ -237,6 +239,8 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                     channelBuilder = NettyChannelBuilder.forAddress(host, port);
                 }
             }
+            
+            // 注意：认证逻辑已移至 StreamConnectionManager.connect() 中处理
             
             return channelBuilder
                     .sslContext(sslContext)

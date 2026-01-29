@@ -3,11 +3,15 @@ package com.flux.servicecenter.client.internal;
 import com.flux.servicecenter.config.ServiceCenterConfig;
 import com.flux.servicecenter.stream.StreamProto.*;
 import com.flux.servicecenter.stream.ServiceCenterStreamGrpc;
+import io.grpc.ClientInterceptor;
 import io.grpc.ManagedChannel;
+import io.grpc.Metadata;
+import io.grpc.stub.MetadataUtils;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -80,6 +84,16 @@ public class StreamConnectionManager {
     private ScheduledExecutorService heartbeatExecutor;
     private ScheduledFuture<?> heartbeatFuture;
     
+    // ========== 认证 ==========
+    
+    /** 
+     * 认证元数据
+     * 
+     * <p>包含认证令牌等元数据信息，用于在每次 gRPC 调用时附加到请求头中。
+     * 如果配置中提供了认证信息，则会在连接时创建并设置。</p>
+     */
+    private Metadata authMetadata;
+    
     // ========== 构造函数 ==========
     
     public StreamConnectionManager(ServiceCenterConfig config, ManagedChannel channel) {
@@ -110,8 +124,17 @@ public class StreamConnectionManager {
             pendingRequests.clear();
             connected.set(false);
             
-            // 创建异步 Stub
-            asyncStub = ServiceCenterStreamGrpc.newStub(channel);
+            // 创建认证元数据（与 ConnectionManager 保持一致）
+            createAuthMetadata();
+            
+            // 创建异步 Stub（如果有认证信息，则添加拦截器）
+            if (authMetadata != null) {
+                ClientInterceptor authInterceptor = MetadataUtils.newAttachHeadersInterceptor(authMetadata);
+                asyncStub = ServiceCenterStreamGrpc.newStub(channel).withInterceptors(authInterceptor);
+                logger.debug("已附加认证拦截器到 gRPC Stub");
+            } else {
+                asyncStub = ServiceCenterStreamGrpc.newStub(channel);
+            }
             
             // 建立双向流
             requestObserver = asyncStub.connect(new StreamResponseObserver());
@@ -611,6 +634,55 @@ public class StreamConnectionManager {
     
     public void setErrorListener(Consumer<ErrorResponse> listener) {
         this.errorListener = listener;
+    }
+    
+    // ========== 认证方法 ==========
+    
+    /**
+     * 创建认证元数据（与 ConnectionManager 保持一致）
+     * 
+     * <p>在 connect() 时调用，根据配置创建认证信息：</p>
+     * <ul>
+     *   <li>优先使用用户ID密码认证（Basic Auth）</li>
+     *   <li>否则使用令牌认证（Bearer Token）</li>
+     * </ul>
+     */
+    private void createAuthMetadata() {
+        authMetadata = new Metadata();
+        
+        // 优先使用用户ID密码认证，如果未设置则使用令牌认证
+        if (config.getUserId() != null && !config.getUserId().isEmpty() &&
+            config.getPassword() != null && !config.getPassword().isEmpty()) {
+            // 用户ID密码认证：使用 Basic Auth
+            // 注意：这里使用 userId（用户ID），而不是 userName（用户名）
+            // userId 是数据库中 HUB_USER 表的唯一主键标识
+            String credentials = config.getUserId() + ":" + config.getPassword();
+            String encoded = Base64.getEncoder().encodeToString(credentials.getBytes());
+            authMetadata.put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER),
+                    "Basic " + encoded);
+            logger.debug("使用用户ID密码认证: userId={}", config.getUserId());
+        } else if (config.getAuthToken() != null && !config.getAuthToken().isEmpty()) {
+            // 令牌认证：使用 Bearer Token
+            authMetadata.put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER),
+                    "Bearer " + config.getAuthToken());
+            logger.debug("使用令牌认证");
+        } else {
+            // 没有认证信息
+            authMetadata = null;
+            logger.debug("未配置认证信息");
+        }
+    }
+    
+    /**
+     * 获取认证元数据拦截器（与 ConnectionManager 保持一致）
+     * 
+     * @return 元数据拦截器，如果没有认证信息则返回 null
+     */
+    public ClientInterceptor getMetadataInterceptor() {
+        if (authMetadata == null) {
+            return null;
+        }
+        return MetadataUtils.newAttachHeadersInterceptor(authMetadata);
     }
     
     // ========== Getter ==========

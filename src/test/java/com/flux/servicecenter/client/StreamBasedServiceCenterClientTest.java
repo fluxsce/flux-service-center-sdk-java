@@ -44,6 +44,8 @@ public class StreamBasedServiceCenterClientTest {
                 .setEnableTls(false)         // 是否启用 TLS
                 .setNamespaceId("ns_F41J68C80A50C28G68A06I53A49J4")
                 .setGroupName("test-group")
+                .setUserId("admin")
+                .setPassword("123456")
                 .setHeartbeatInterval(5000)
                 .setReconnectInterval(3000)
                 .setMaxReconnectAttempts(10)

@@ -8,7 +8,16 @@
 
 ## [Unreleased]（未发布）
 
-暂无
+## [2.0.2] - 2026-01-29
+
+### 修复
+- 🐛 **添加认证处理逻辑（与 ConnectionManager 保持一致）**
+  - 修复 `StreamBasedServiceCenterClient` 缺少认证处理的问题
+  - 认证逻辑移至 `StreamConnectionManager.connect()` 中处理
+  - 支持用户ID密码认证：使用 Basic Auth（`Basic base64(userId:password)`）
+  - 支持 Token 认证：使用 Bearer Token（`Bearer <token>`）
+  - 新增 `StreamConnectionManager.getMetadataInterceptor()` 方法，与 `ConnectionManager` API 一致
+  - 认证信息在 `connect()` 时创建，通过 gRPC metadata 拦截器附加到双向流请求
 
 ## [2.0.1] - 2026-01-29
 
