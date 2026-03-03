@@ -573,7 +573,14 @@ public class StreamConnectionManager {
     // ========== 重连 ==========
     
     /**
-     * 自动重连（支持指数退避重试）
+     * 自动重连（支持指数退避重试，支持无限重试）
+     * 
+     * <p>重连策略与 ConfigCenterManager 保持一致：</p>
+     * <ul>
+     *   <li>当 maxReconnectAttempts &lt; 0 时，无限重试</li>
+     *   <li>当 maxReconnectAttempts &gt;= 0 时，最多重试指定次数</li>
+     *   <li>使用指数退避算法，最大延迟 30 秒</li>
+     * </ul>
      */
     private void reconnect() {
         if (reconnecting.getAndSet(true)) {
@@ -583,29 +590,45 @@ public class StreamConnectionManager {
         
         // 异步重连（避免阻塞 gRPC 线程）
         CompletableFuture.runAsync(() -> {
-            int maxRetries = 5; // 最多重试 5 次
+            int attempts = 0;
             long baseDelay = config.getReconnectInterval();
+            final long maxBackoffMs = 30000; // 最大退避延迟 30 秒
+            int maxReconnectAttempts = config.getMaxReconnectAttempts();
             
-            for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            // 支持无限重试：maxReconnectAttempts < 0 表示无限重试
+            while (maxReconnectAttempts < 0 || attempts < maxReconnectAttempts) {
                 try {
-                    // 计算退避延迟（指数退避：1x, 2x, 4x, 8x, 16x）
-                    long delay = baseDelay * (1L << (attempt - 1)); // 2^(attempt-1)
-                    delay = Math.min(delay, 30000); // 最多 30 秒
+                    // 计算退避延迟（指数退避）
+                    long delay = baseDelay * (1L << Math.min(attempts, 10)); // 2^attempts，防止溢出
+                    delay = Math.min(delay, maxBackoffMs);
                     
-                    logger.info("开始自动重连... 尝试 {}/{}, 等待 {}ms", attempt, maxRetries, delay);
+                    attempts++;
+                    
+                    if (maxReconnectAttempts < 0) {
+                        logger.info("开始自动重连... 尝试 {} (无限重试模式), 等待 {}ms", attempts, delay);
+                    } else {
+                        logger.info("开始自动重连... 尝试 {}/{}, 等待 {}ms", attempts, maxReconnectAttempts, delay);
+                    }
+                    
                     Thread.sleep(delay);
                     
                     // 尝试连接
                     connect();
-                    logger.info("自动重连成功");
+                    logger.info("自动重连成功，共尝试 {} 次", attempts);
                     return; // 连接成功，退出重试循环
                     
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    logger.warn("自动重连被中断");
+                    return;
                 } catch (Exception e) {
-                    if (attempt < maxRetries) {
+                    if (maxReconnectAttempts < 0) {
+                        logger.warn("自动重连失败（尝试 {}），将继续重试: {}", attempts, e.getMessage());
+                    } else if (attempts < maxReconnectAttempts) {
                         logger.warn("自动重连失败（尝试 {}/{}），将继续重试: {}", 
-                                attempt, maxRetries, e.getMessage());
+                                attempts, maxReconnectAttempts, e.getMessage());
                     } else {
-                        logger.error("自动重连失败（已达最大重试次数 {}），放弃重连", maxRetries, e);
+                        logger.error("自动重连失败（已达最大重试次数 {}），放弃重连", maxReconnectAttempts, e);
                     }
                 }
             }
