@@ -697,11 +697,26 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
         ensureConnected();
         
         try {
-            RegistryProto.HeartbeatRequest request = RegistryProto.HeartbeatRequest.newBuilder()
-                    .setNodeId(nodeId) // proto 中是 nodeId (单数)
-                    .build();
+            RegistryProto.HeartbeatRequest.Builder requestBuilder = RegistryProto.HeartbeatRequest.newBuilder()
+                    .setNodeId(nodeId);
             
-            RegistryProto.RegistryResponse response = businessHelper.heartbeat(request);
+            // 携带完整服务信息，与 ServiceRegistryManager 保持一致
+            // 网络重连后服务端可能已剔除不健康节点，携带 service 信息便于服务端恢复/更新节点
+            NodeInfo nodeInfo = registeredNodes.get(nodeId);
+            if (nodeInfo != null) {
+                RegistryProto.Service.Builder serviceBuilder = RegistryProto.Service.newBuilder()
+                        .setNamespaceId(getOrDefault(nodeInfo.getNamespaceId(), config.getNamespaceId()))
+                        .setGroupName(getOrDefault(nodeInfo.getGroupName(), config.getGroupName()))
+                        .setServiceName(getOrDefault(nodeInfo.getServiceName(), ""));
+                
+                RegistryProto.Node protoNode = ProtoConverter.toProtoNode(nodeInfo);
+                if (protoNode != null) {
+                    serviceBuilder.setNode(protoNode);
+                }
+                requestBuilder.setService(serviceBuilder.build());
+            }
+            
+            RegistryProto.RegistryResponse response = businessHelper.heartbeat(requestBuilder.build());
             
             OperationResult result = new OperationResult();
             result.setSuccess(response.getSuccess());
@@ -1010,7 +1025,11 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
         ScheduledFuture<?> future = heartbeatExecutor.scheduleAtFixedRate(
                 () -> {
                     try {
-                        sendHeartbeat(nodeId);
+                        OperationResult result = sendHeartbeat(nodeId);
+                        if (!result.isSuccess()) {
+                            logger.error("心跳返回错误, nodeId: {}, message: {}", 
+                                    nodeId, result.getMessage());
+                        }
                     } catch (Exception e) {
                         logger.error("发送心跳失败, nodeId: {}", nodeId, e);
                     }
