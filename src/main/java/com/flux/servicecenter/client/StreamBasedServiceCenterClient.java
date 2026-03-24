@@ -91,7 +91,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
         
         // 创建线程池
         this.heartbeatExecutor = Executors.newScheduledThreadPool(
-                Math.max(2, Runtime.getRuntime().availableProcessors()),
+                Math.max(4, Runtime.getRuntime().availableProcessors()),
                 r -> {
                     Thread t = new Thread(r, "stream-heartbeat-" + System.currentTimeMillis());
                     t.setDaemon(true);
@@ -1024,24 +1024,24 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
     private void startHeartbeat(String nodeId) {
         stopHeartbeat(nodeId); // 先停止旧的心跳任务
         
-        ScheduledFuture<?> future = heartbeatExecutor.scheduleAtFixedRate(
-                () -> {
-                    try {
-                        OperationResult result = sendHeartbeat(nodeId);
-                        if (!result.isSuccess()) {
-                            logger.error("Heartbeat rejected: nodeId={}, message={}", 
-                                    nodeId, result.getMessage());
+            ScheduledFuture<?> future = heartbeatExecutor.scheduleAtFixedRate(
+                    () -> {
+                        try {
+                            OperationResult result = sendHeartbeat(nodeId);
+                            if (!result.isSuccess()) {
+                                    logger.error("Heartbeat rejected: nodeId={}, message={}", 
+                                            nodeId, result.getMessage());
+                            }
+                        } catch (Exception e) {
+                            logger.error("sendHeartbeat failed: nodeId={}", nodeId, e);
                         }
-                    } catch (Exception e) {
-                        logger.error("sendHeartbeat failed: nodeId={}", nodeId, e);
-                    }
-                },
-                config.getHeartbeatInterval(),
-                config.getHeartbeatInterval(),
-                TimeUnit.MILLISECONDS  // 修复：使用毫秒
-        );
-        
-        heartbeatTasks.put(nodeId, future);
+                    },
+                    config.getHeartbeatInterval(),
+                    config.getHeartbeatInterval(),
+                    TimeUnit.MILLISECONDS  // 修复：使用毫秒
+            );
+            
+            heartbeatTasks.put(nodeId, future);
         logger.debug("Heartbeat task started: nodeId={}, intervalMs={}", nodeId, config.getHeartbeatInterval());
     }
     

@@ -99,7 +99,7 @@ public class StreamConnectionManager {
     public StreamConnectionManager(ServiceCenterConfig config, ManagedChannel channel) {
         this.config = config;
         this.channel = channel;
-        this.requestTimeoutMs = config.getRequestTimeout() * 1000L;
+        this.requestTimeoutMs = config.getRequestTimeout();
     }
     
     // ========== 连接管理 ==========
@@ -121,7 +121,7 @@ public class StreamConnectionManager {
             
             // 清理旧状态（重连时必须清理，否则 waitForConnection 会使用旧 connectionId）
             connectionId.set(null);
-            pendingRequests.clear();
+            failAllPendingRequests(new RuntimeException("Stream reconnecting"));
             connected.set(false);
             
             // 创建认证元数据（与 ConnectionManager 保持一致）
@@ -337,9 +337,7 @@ public class StreamConnectionManager {
         }
         
         // 完成所有待处理的请求
-        pendingRequests.forEach((requestId, future) -> 
-            future.completeExceptionally(new RuntimeException("Connection closed")));
-        pendingRequests.clear();
+        failAllPendingRequests(new RuntimeException("Connection closed"));
         
         // 关闭流
         if (requestObserver != null) {
@@ -352,6 +350,17 @@ public class StreamConnectionManager {
         
         connectionId.set(null);
         logger.info("Bidirectional stream connection closed");
+    }
+    
+    /**
+     * 结束流上所有未完成的请求-响应等待，避免服务端断连/重启后 {@link java.util.concurrent.CompletableFuture#get(long, TimeUnit)} 一直阻塞到超时。
+     */
+    private void failAllPendingRequests(Throwable cause) {
+        if (pendingRequests.isEmpty()) {
+            return;
+        }
+        pendingRequests.forEach((requestId, future) -> future.completeExceptionally(cause));
+        pendingRequests.clear();
     }
     
     // ========== 请求发送 ==========
@@ -426,6 +435,7 @@ public class StreamConnectionManager {
             logger.error("Bidirectional stream error occurred", t);
             lastError.set(t);
             connected.set(false);
+            failAllPendingRequests(t);
             
             // 尝试重连
             reconnect();
@@ -435,6 +445,7 @@ public class StreamConnectionManager {
         public void onCompleted() {
             logger.info("Bidirectional stream completed (server closed connection)");
             connected.set(false);
+            failAllPendingRequests(new RuntimeException("Bidirectional stream completed"));
             
             // 服务端正常关闭也应该尝试重连（例如服务端重启场景）
             reconnect();
