@@ -157,14 +157,14 @@ public class ConfigCenterManager {
             ConfigProto.GetConfigResponse response = blockingStub
                     .withDeadlineAfter(connectionManager.getRequestTimeout(), TimeUnit.MILLISECONDS)
                     .getConfig(configKey);
-            logger.info("获取配置响应: success={}, message={}, config={}", 
+            logger.info("getConfig response: success={}, message={}, config={}", 
                     response.getSuccess(), response.getMessage(), 
                     response.hasConfig() ? response.getConfig().getConfigDataId() : "null");
             
             return ProtoConverter.toGetConfigResult(response);
         } catch (Exception e) {
-            logger.error("获取配置失败", e);
-            throw new RuntimeException("获取配置失败", e);
+            logger.error("getConfig failed", e);
+            throw new RuntimeException("Get config failed", e);
         }
     }
     
@@ -181,7 +181,7 @@ public class ConfigCenterManager {
     public SaveConfigResult saveConfig(ConfigInfo configInfo) {
         checkNotClosed();
         if (configInfo == null) {
-            throw new IllegalArgumentException("配置信息不能为 null");
+            throw new IllegalArgumentException("ConfigInfo must not be null");
         }
         
         try {
@@ -190,13 +190,13 @@ public class ConfigCenterManager {
             ConfigProto.SaveConfigResponse response = blockingStub
                     .withDeadlineAfter(connectionManager.getRequestTimeout(), TimeUnit.MILLISECONDS)
                     .saveConfig(configData);
-            logger.info("保存配置响应: success={}, message={}, version={}, contentMd5={}", 
+            logger.info("saveConfig response: success={}, message={}, version={}, contentMd5={}", 
                     response.getSuccess(), response.getMessage(), response.getVersion(), response.getContentMd5());
             
             return ProtoConverter.toSaveConfigResult(response);
         } catch (Exception e) {
-            logger.error("保存配置失败", e);
-            throw new RuntimeException("保存配置失败", e);
+            logger.error("saveConfig failed", e);
+            throw new RuntimeException("Save config failed", e);
         }
     }
     
@@ -223,19 +223,19 @@ public class ConfigCenterManager {
             ConfigProto.ConfigResponse response = blockingStub
                     .withDeadlineAfter(connectionManager.getRequestTimeout(), TimeUnit.MILLISECONDS)
                     .deleteConfig(configKey);
-            logger.info("删除配置响应: success={}, message={}, code={}", 
+            logger.info("deleteConfig response: success={}, message={}, code={}", 
                     response.getSuccess(), response.getMessage(), response.getCode());
             
             OperationResult result = ProtoConverter.toOperationResult(response);
             if (result.isSuccess()) {
-                logger.info("配置删除成功: {}/{}/{}", namespaceId, groupName, configDataId);
+                logger.info("Config deleted: {}/{}/{}", namespaceId, groupName, configDataId);
             } else {
-                logger.warn("配置删除失败: {}", result.getMessage());
+                logger.warn("Config delete failed: {}", result.getMessage());
             }
             return result;
         } catch (Exception e) {
-            logger.error("删除配置失败", e);
-            throw new RuntimeException("删除配置失败", e);
+            logger.error("deleteConfig failed", e);
+            throw new RuntimeException("Delete config failed", e);
         }
     }
     
@@ -260,18 +260,18 @@ public class ConfigCenterManager {
             ConfigProto.ListConfigsResponse response = blockingStub
                     .withDeadlineAfter(connectionManager.getRequestTimeout(), TimeUnit.MILLISECONDS)
                     .listConfigs(request);
-            logger.info("列出配置响应: success={}, message={}, configsCount={}", 
+            logger.info("listConfigs response: success={}, message={}, configsCount={}", 
                     response.getSuccess(), response.getMessage(), response.getConfigsCount());
             
             if (response.getSuccess()) {
                 return ProtoConverter.toConfigInfoList(response.getConfigsList());
             } else {
-                logger.warn("列出配置失败: {}", response.getMessage());
+                logger.warn("listConfigs failed: {}", response.getMessage());
                 return Collections.emptyList();
             }
         } catch (Exception e) {
-            logger.error("列出配置失败", e);
-            throw new RuntimeException("列出配置失败", e);
+            logger.error("listConfigs failed", e);
+            throw new RuntimeException("List configs failed", e);
         }
     }
     
@@ -282,10 +282,10 @@ public class ConfigCenterManager {
                               List<String> configDataIds, ConfigChangeListener listener) {
         checkNotClosed();
         if (configDataIds == null || configDataIds.isEmpty()) {
-            throw new IllegalArgumentException("配置标识列表不能为空");
+            throw new IllegalArgumentException("configDataIds must not be null or empty");
         }
         if (listener == null) {
-            throw new IllegalArgumentException("监听器不能为 null");
+            throw new IllegalArgumentException("Listener must not be null");
         }
         
         String subscriptionId = UUID.randomUUID().toString();
@@ -305,14 +305,14 @@ public class ConfigCenterManager {
                     // 将 Proto 对象转换为领域对象
                     ConfigChangeEvent event = ProtoConverter.toConfigChangeEvent(protoEvent);
                     if (event == null) {
-                        logger.warn("转换配置变更事件失败，事件为 null");
+                        logger.warn("toConfigChangeEvent returned null, skipping");
                         return;
                     }
                     
                     // 调用监听器（使用领域对象）
                     listener.onConfigChange(event);
                 } catch (Exception e) {
-                    logger.error("处理配置变更事件失败", e);
+                    logger.error("handle config change event failed", e);
                 }
             }
             
@@ -337,10 +337,10 @@ public class ConfigCenterManager {
                 
                 if (isNormalShutdown) {
                     // 正常关闭（客户端主动关闭），记录为 INFO 级别，不重连
-                    logger.info("监听配置变更连接已关闭（客户端主动关闭）: watcherID={}", subscriptionId);
+                    logger.info("Config watch stream closed (client shutdown): watcherID={}", subscriptionId);
                 } else {
                     // 异常关闭（服务端关闭、网络错误等），记录为 WARN 级别，触发重连
-                    logger.warn("监听配置变更连接断开，将自动重连: watcherID={}, error={}", 
+                    logger.warn("Config watch stream disconnected, will reconnect: watcherID={}, error={}", 
                             subscriptionId, t.getMessage());
                 }
                 
@@ -355,7 +355,7 @@ public class ConfigCenterManager {
             
             @Override
             public void onCompleted() {
-                logger.info("监听配置变更完成: {}", subscriptionId);
+                logger.info("Config watch stream completed: {}", subscriptionId);
                 subscriptions.remove(subscriptionId);
             }
         };
@@ -365,7 +365,7 @@ public class ConfigCenterManager {
         subscriptions.put(subscriptionId, new ConfigSubscriptionContext(
                 subscriptionId, namespaceId, groupName, configDataIds, listener, responseObserver));
         
-        logger.info("已监听配置变更: subscriptionId={}, configs={}", subscriptionId, configDataIds);
+        logger.info("Config watch started: subscriptionId={}, configs={}", subscriptionId, configDataIds);
         return subscriptionId;
     }
     
@@ -375,7 +375,7 @@ public class ConfigCenterManager {
     public void unwatch(String subscriptionId) {
         ConfigSubscriptionContext context = subscriptions.remove(subscriptionId);
         if (context != null) {
-            logger.info("已取消配置监听: {}", subscriptionId);
+            logger.info("Config watch cancelled: {}", subscriptionId);
         }
     }
     
@@ -405,18 +405,18 @@ public class ConfigCenterManager {
             ConfigProto.GetConfigHistoryResponse response = blockingStub
                     .withDeadlineAfter(connectionManager.getRequestTimeout(), TimeUnit.MILLISECONDS)
                     .getConfigHistory(request);
-            logger.info("获取配置历史响应: success={}, message={}, historyCount={}", 
+            logger.info("getConfigHistory response: success={}, message={}, historyCount={}", 
                     response.getSuccess(), response.getMessage(), response.getHistoryCount());
             
             if (response.getSuccess()) {
                 return ProtoConverter.toConfigHistoryList(response.getHistoryList());
             } else {
-                logger.warn("获取配置历史失败: {}", response.getMessage());
+                logger.warn("getConfigHistory failed: {}", response.getMessage());
                 return Collections.emptyList();
             }
         } catch (Exception e) {
-            logger.error("获取配置历史失败", e);
-            throw new RuntimeException("获取配置历史失败", e);
+            logger.error("getConfigHistory failed", e);
+            throw new RuntimeException("Get config history failed", e);
         }
     }
     
@@ -453,20 +453,20 @@ public class ConfigCenterManager {
             ConfigProto.RollbackConfigResponse response = blockingStub
                     .withDeadlineAfter(connectionManager.getRequestTimeout(), TimeUnit.MILLISECONDS)
                     .rollbackConfig(request);
-            logger.info("回滚配置响应: success={}, message={}, newVersion={}, contentMd5={}", 
+            logger.info("rollbackConfig response: success={}, message={}, newVersion={}, contentMd5={}", 
                     response.getSuccess(), response.getMessage(), response.getNewVersion(), response.getContentMd5());
             
             RollbackConfigResult result = ProtoConverter.toRollbackConfigResult(response);
             if (result.isSuccess()) {
-                logger.info("配置回滚成功: {}/{}/{}, targetVersion={}", 
+                logger.info("Config rolled back: {}/{}/{}, targetVersion={}", 
                         namespaceId, groupName, configDataId, targetVersion);
             } else {
-                logger.warn("配置回滚失败: {}", result.getMessage());
+                logger.warn("Config rollback failed: {}", result.getMessage());
             }
             return result;
         } catch (Exception e) {
-            logger.error("回滚配置失败", e);
-            throw new RuntimeException("回滚配置失败", e);
+            logger.error("rollbackConfig failed", e);
+            throw new RuntimeException("Rollback config failed", e);
         }
     }
     
@@ -487,7 +487,7 @@ public class ConfigCenterManager {
                     attempts++;
                     backoffMs = Math.min(backoffMs * 2, maxBackoffMs);
                     
-                    logger.info("尝试重连配置监听: subscriptionId={}, attempt={}, backoff={}ms", 
+                    logger.info("Reconnecting config watch: subscriptionId={}, attempt={}, backoffMs={}", 
                             subscriptionId, attempts, backoffMs);
                     
                     // 检查是否已有相同订阅
@@ -496,7 +496,7 @@ public class ConfigCenterManager {
                         if (ctx.namespaceId.equals(namespaceId) && 
                             ctx.groupName.equals(groupName) &&
                             ctx.configDataIds != null && ctx.configDataIds.equals(configDataIds)) {
-                            logger.info("发现已有相同配置订阅，跳过重连: subscriptionId={}", ctx.subscriptionId);
+                            logger.info("Duplicate config watch exists, skip reconnect: subscriptionId={}", ctx.subscriptionId);
                             hasDuplicate = true;
                             break;
                         }
@@ -517,22 +517,22 @@ public class ConfigCenterManager {
                     
                     // 重新监听
                     String newSubscriptionId = watchConfig(namespaceId, groupName, configDataIds, listener);
-                    logger.info("配置监听重连成功: oldSubscriptionId={}, newSubscriptionId={}, attempts={}", 
+                    logger.info("Config watch reconnected: oldSubscriptionId={}, newSubscriptionId={}, attempts={}", 
                             subscriptionId, newSubscriptionId, attempts);
                     
                     listener.onReconnected();
                     return;
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    logger.warn("配置监听重连被中断: subscriptionId={}", subscriptionId);
+                    logger.warn("Config watch reconnect interrupted: subscriptionId={}", subscriptionId);
                     return;
                 } catch (Exception e) {
-                    logger.warn("配置监听重连失败: subscriptionId={}, attempt={}", subscriptionId, attempts, e);
+                    logger.warn("Config watch reconnect failed: subscriptionId={}, attempt={}", subscriptionId, attempts, e);
                 }
             }
             
             if (!closed.get()) {
-                logger.error("配置监听重连失败，已达到最大重试次数: subscriptionId={}, attempts={}", 
+                logger.error("Config watch reconnect exhausted retries: subscriptionId={}, attempts={}", 
                         subscriptionId, attempts);
             }
         });
@@ -552,28 +552,28 @@ public class ConfigCenterManager {
             return;
         }
         
-        logger.info("正在关闭配置中心管理器...");
+        logger.info("Closing config center manager...");
         
         // 取消所有配置订阅
         List<String> subscriptionIds = new ArrayList<>(subscriptions.keySet());
         if (!subscriptionIds.isEmpty()) {
-            logger.info("正在取消 {} 个配置订阅...", subscriptionIds.size());
+            logger.info("Cancelling {} config subscription(s)...", subscriptionIds.size());
             for (String subscriptionId : subscriptionIds) {
                 try {
                     unwatch(subscriptionId);
-                    logger.debug("已取消配置订阅: {}", subscriptionId);
+                    logger.debug("Config subscription cancelled: {}", subscriptionId);
                 } catch (Exception e) {
                     // 取消订阅失败不影响关闭流程，只记录警告
-                    logger.warn("取消配置订阅失败: subscriptionId={}, error={}", subscriptionId, e.getMessage());
+                    logger.warn("unwatch failed during close: subscriptionId={}, error={}", subscriptionId, e.getMessage());
                 }
             }
-            logger.info("配置订阅取消完成");
+            logger.info("Config subscription cancellation completed");
         }
         
         // 清空本地缓存
         subscriptions.clear();
         
-        logger.info("配置中心管理器已关闭");
+        logger.info("Config center manager closed");
     }
     
     /**
@@ -581,10 +581,10 @@ public class ConfigCenterManager {
      */
     private void checkNotClosed() {
         if (closed.get()) {
-            throw new IllegalStateException("配置中心管理器已关闭");
+            throw new IllegalStateException("Config center manager is closed");
         }
         if (!connectionManager.isConnected()) {
-            throw new IllegalStateException("未连接，请先调用 connect()");
+            throw new IllegalStateException("Not connected; call connect() first");
         }
     }
     

@@ -40,7 +40,7 @@ public class StreamBusinessHelper {
             ErrorResponse error = response.getError();
             return String.format("[%s] %s", error.getCode(), error.getMessage());
         }
-        return "未知错误";
+        return "Unknown error";
     }
     
     // ========== 服务注册发现 ==========
@@ -59,7 +59,7 @@ public class StreamBusinessHelper {
         
         if (isErrorResponse(response)) {
             String errorMsg = getErrorMessage(response);
-            logger.error("注册服务失败: {}", errorMsg);
+            logger.error("registerService failed: {}", errorMsg);
             return RegistryProto.RegisterServiceResponse.newBuilder()
                     .setSuccess(false)
                     .setMessage(errorMsg)
@@ -83,7 +83,7 @@ public class StreamBusinessHelper {
         
         if (isErrorResponse(response)) {
             String errorMsg = getErrorMessage(response);
-            logger.error("注销服务失败: {}", errorMsg);
+            logger.error("unregisterService failed: {}", errorMsg);
             return RegistryProto.RegistryResponse.newBuilder()
                     .setSuccess(false)
                     .setMessage(errorMsg)
@@ -108,7 +108,7 @@ public class StreamBusinessHelper {
         // 检查是否是错误响应
         if (isErrorResponse(response)) {
             String errorMsg = getErrorMessage(response);
-            logger.error("注册节点失败: {}", errorMsg);
+            logger.error("registerNode failed: {}", errorMsg);
             return RegistryProto.RegisterNodeResponse.newBuilder()
                     .setSuccess(false)
                     .setMessage(errorMsg)
@@ -132,7 +132,7 @@ public class StreamBusinessHelper {
         
         if (isErrorResponse(response)) {
             String errorMsg = getErrorMessage(response);
-            logger.error("注销节点失败: {}", errorMsg);
+            logger.error("unregisterNode failed: {}", errorMsg);
             return RegistryProto.RegistryResponse.newBuilder()
                     .setSuccess(false)
                     .setMessage(errorMsg)
@@ -156,7 +156,7 @@ public class StreamBusinessHelper {
         
         if (isErrorResponse(response)) {
             String errorMsg = getErrorMessage(response);
-            logger.error("发现节点失败: {}", errorMsg);
+            logger.error("discoverNodes failed: {}", errorMsg);
             return RegistryProto.DiscoverNodesResponse.newBuilder()
                     .setSuccess(false)
                     .setMessage(errorMsg)
@@ -180,7 +180,7 @@ public class StreamBusinessHelper {
         
         if (isErrorResponse(response)) {
             String errorMsg = getErrorMessage(response);
-            logger.error("发送心跳失败: {}", errorMsg);
+            logger.error("heartbeat failed: {}", errorMsg);
             return RegistryProto.RegistryResponse.newBuilder()
                     .setSuccess(false)
                     .setMessage(errorMsg)
@@ -201,7 +201,7 @@ public class StreamBusinessHelper {
             .build();
         
         connectionManager.sendRequestAsync(clientMessage);
-        logger.info("已发送服务订阅请求: {}/{}/{}", 
+        logger.info("SubscribeServices request sent: namespaceId={}, groupName={}, serviceNames={}", 
             request.getNamespaceId(), request.getGroupName(), request.getServiceNamesList());
     }
     
@@ -216,7 +216,7 @@ public class StreamBusinessHelper {
             .build();
         
         connectionManager.sendRequestAsync(clientMessage);
-        logger.info("已发送命名空间订阅请求: {}/{}", 
+        logger.info("SubscribeNamespace request sent: namespaceId={}, groupName={}", 
             request.getNamespaceId(), request.getGroupName());
     }
     
@@ -236,7 +236,7 @@ public class StreamBusinessHelper {
         
         if (isErrorResponse(response)) {
             String errorMsg = getErrorMessage(response);
-            logger.error("获取配置失败: {}", errorMsg);
+            logger.error("getConfig failed: {}", errorMsg);
             return ConfigProto.GetConfigResponse.newBuilder()
                     .setSuccess(false)
                     .setMessage(errorMsg)
@@ -260,7 +260,7 @@ public class StreamBusinessHelper {
         
         if (isErrorResponse(response)) {
             String errorMsg = getErrorMessage(response);
-            logger.error("保存配置失败: {}", errorMsg);
+            logger.error("saveConfig failed: {}", errorMsg);
             return ConfigProto.SaveConfigResponse.newBuilder()
                     .setSuccess(false)
                     .setMessage(errorMsg)
@@ -284,7 +284,7 @@ public class StreamBusinessHelper {
         
         if (isErrorResponse(response)) {
             String errorMsg = getErrorMessage(response);
-            logger.error("删除配置失败: {}", errorMsg);
+            logger.error("deleteConfig failed: {}", errorMsg);
             return ConfigProto.ConfigResponse.newBuilder()
                     .setSuccess(false)
                     .setMessage(errorMsg)
@@ -308,7 +308,7 @@ public class StreamBusinessHelper {
         
         if (isErrorResponse(response)) {
             String errorMsg = getErrorMessage(response);
-            logger.error("列出配置失败: {}", errorMsg);
+            logger.error("listConfigs failed: {}", errorMsg);
             return ConfigProto.ListConfigsResponse.newBuilder()
                     .setSuccess(false)
                     .setMessage(errorMsg)
@@ -329,7 +329,7 @@ public class StreamBusinessHelper {
             .build();
         
         connectionManager.sendRequestAsync(clientMessage);
-        logger.info("已发送配置监听请求: {}/{}/{}", 
+        logger.info("WatchConfig request sent: namespaceId={}, groupName={}, configDataIds={}", 
             request.getNamespaceId(), request.getGroupName(), request.getConfigDataIdsList());
     }
     
@@ -347,7 +347,7 @@ public class StreamBusinessHelper {
         
         if (isErrorResponse(response)) {
             String errorMsg = getErrorMessage(response);
-            logger.error("获取配置历史失败: {}", errorMsg);
+            logger.error("getConfigHistory failed: {}", errorMsg);
             return ConfigProto.GetConfigHistoryResponse.newBuilder()
                     .setSuccess(false)
                     .setMessage(errorMsg)
@@ -371,7 +371,7 @@ public class StreamBusinessHelper {
         
         if (isErrorResponse(response)) {
             String errorMsg = getErrorMessage(response);
-            logger.error("回滚配置失败: {}", errorMsg);
+            logger.error("rollbackConfig failed: {}", errorMsg);
             return ConfigProto.RollbackConfigResponse.newBuilder()
                     .setSuccess(false)
                     .setMessage(errorMsg)

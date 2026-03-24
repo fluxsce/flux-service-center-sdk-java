@@ -144,10 +144,10 @@ public class ConnectionManager implements AutoCloseable {
      */
     public synchronized void connect() {
         if (closed.get()) {
-            throw new IllegalStateException("连接管理器已关闭");
+            throw new IllegalStateException("Connection manager is closed");
         }
         if (connected.get()) {
-            logger.warn("已连接，跳过重复连接");
+            logger.warn("Already connected, skipping duplicate connect()");
             return;
         }
         
@@ -160,7 +160,7 @@ public class ConnectionManager implements AutoCloseable {
             if (serverAddress != null && serverAddress.contains(",")) {
                 // 多个地址（集群模式），使用 forTarget 支持负载均衡
                 channelBuilder = ManagedChannelBuilder.forTarget(serverAddress);
-                logger.info("使用集群模式连接: {}", serverAddress);
+                logger.info("Connecting in cluster mode: {}", serverAddress);
             } else {
                 // 单个地址，使用 forAddress 或 forTarget
                 if (config.getServerAddress() != null && !config.getServerAddress().trim().isEmpty()) {
@@ -201,12 +201,12 @@ public class ConnectionManager implements AutoCloseable {
                 String encoded = java.util.Base64.getEncoder().encodeToString(credentials.getBytes());
                 metadata.put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER),
                         "Basic " + encoded);
-                logger.debug("使用用户ID密码认证: userId={}", config.getUserId());
+                logger.debug("Using Basic auth: userId={}", config.getUserId());
             } else if (config.getAuthToken() != null && !config.getAuthToken().isEmpty()) {
                 // 令牌认证：使用 Bearer Token
                 metadata.put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER),
                         "Bearer " + config.getAuthToken());
-                logger.debug("使用令牌认证");
+                logger.debug("Using Bearer token authentication");
             }
             
             connected.set(true);
@@ -215,12 +215,12 @@ public class ConnectionManager implements AutoCloseable {
             // 启动健康检查
             startHealthCheck();
             
-            logger.info("已连接到服务中心: {}", config.getServerAddress());
+            logger.info("Connected to service center: {}", config.getServerAddress());
         } catch (Exception e) {
             connected.set(false);
             lastError.set(e);
-            logger.error("连接服务中心失败: {}", config.getServerAddress(), e);
-            throw new RuntimeException("连接服务中心失败", e);
+            logger.error("Failed to connect to service center: {}", config.getServerAddress(), e);
+            throw new RuntimeException("Failed to connect to service center", e);
         }
     }
     
@@ -271,14 +271,14 @@ public class ConnectionManager implements AutoCloseable {
                     ConnectivityState state = channel.getState(false);
                     if (state == ConnectivityState.TRANSIENT_FAILURE || 
                         state == ConnectivityState.SHUTDOWN) {
-                        logger.warn("检测到连接异常，状态: {}", state);
+                        logger.warn("Unhealthy channel state: {}", state);
                         connected.set(false);
                         // 通知外部进行重连
                         onConnectionLost();
                     }
                 }
             } catch (Exception e) {
-                logger.error("健康检查异常", e);
+                logger.error("Health check error", e);
             }
         }, 30, 30, TimeUnit.SECONDS);
     }
@@ -299,7 +299,7 @@ public class ConnectionManager implements AutoCloseable {
     public synchronized void markDisconnected() {
         if (connected.get()) {
             connected.set(false);
-            logger.info("已标记连接为断开状态");
+            logger.info("Marked connection as disconnected");
         }
     }
     
@@ -308,10 +308,10 @@ public class ConnectionManager implements AutoCloseable {
      */
     private void checkConnected() {
         if (closed.get()) {
-            throw new IllegalStateException("连接管理器已关闭");
+            throw new IllegalStateException("Connection manager is closed");
         }
         if (!connected.get()) {
-            throw new IllegalStateException("未连接，请先调用 connect()");
+            throw new IllegalStateException("Not connected; call connect() first");
         }
     }
     
@@ -326,11 +326,11 @@ public class ConnectionManager implements AutoCloseable {
             return;
         }
         
-        logger.info("尝试重新连接...");
+        logger.info("Attempting to reconnect...");
         try {
             connect();
         } catch (Exception e) {
-            logger.error("重连失败", e);
+            logger.error("Reconnect failed", e);
         }
     }
     
@@ -343,7 +343,7 @@ public class ConnectionManager implements AutoCloseable {
             return;
         }
         
-        logger.info("正在关闭连接管理器...");
+        logger.info("Closing connection manager...");
         
         // 停止健康检查
         if (healthCheckTask != null) {
@@ -356,7 +356,7 @@ public class ConnectionManager implements AutoCloseable {
             channel.shutdown();
             try {
                 if (!channel.awaitTermination(5, TimeUnit.SECONDS)) {
-                    logger.warn("gRPC 通道未在 5 秒内关闭，强制关闭");
+                    logger.warn("gRPC channel did not terminate within 5s, forcing shutdown");
                     channel.shutdownNow();
                     channel.awaitTermination(5, TimeUnit.SECONDS);
                 }
@@ -367,7 +367,7 @@ public class ConnectionManager implements AutoCloseable {
         }
         
         connected.set(false);
-        logger.info("连接管理器已关闭");
+        logger.info("Connection manager closed");
     }
     
     // Getters

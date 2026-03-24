@@ -109,12 +109,12 @@ public class StreamConnectionManager {
      */
     public synchronized void connect() {
         if (connected.get()) {
-            logger.warn("双向流已连接，跳过重复连接");
+            logger.warn("Stream already connected, skipping duplicate connection");
             return;
         }
         
         try {
-            logger.info("正在建立双向流连接...");
+            logger.info("Establishing bidirectional stream connection...");
             
             // 关闭旧的 stream（如果存在）
             closeOldStream();
@@ -131,7 +131,7 @@ public class StreamConnectionManager {
             if (authMetadata != null) {
                 ClientInterceptor authInterceptor = MetadataUtils.newAttachHeadersInterceptor(authMetadata);
                 asyncStub = ServiceCenterStreamGrpc.newStub(channel).withInterceptors(authInterceptor);
-                logger.debug("已附加认证拦截器到 gRPC Stub");
+                logger.debug("Attached authentication interceptor to gRPC Stub");
             } else {
                 asyncStub = ServiceCenterStreamGrpc.newStub(channel);
             }
@@ -146,7 +146,7 @@ public class StreamConnectionManager {
             if (!waitForConnection(5000)) {
                 // 握手超时，清理状态
                 closeOldStream();
-                throw new RuntimeException("握手超时");
+                throw new RuntimeException("Handshake timeout");
             }
             
             // 注意：connected 标志已在 handleHandshake() 中设置为 true
@@ -155,7 +155,7 @@ public class StreamConnectionManager {
             // 启动 Ping 心跳
             startPingHeartbeat();
             
-            logger.info("双向流连接建立成功，connectionId: {}", connectionId.get());
+            logger.info("Bidirectional stream connection established successfully, connectionId: {}", connectionId.get());
             
         } catch (Exception e) {
             // 连接失败，清理状态
@@ -168,9 +168,9 @@ public class StreamConnectionManager {
                 heartbeatFuture = null;
             }
             
-            logger.error("建立双向流连接失败", e);
+            logger.error("Failed to establish bidirectional stream connection", e);
             lastError.set(e);
-            throw new RuntimeException("建立双向流连接失败", e);
+            throw new RuntimeException("Failed to establish bidirectional stream connection", e);
         }
     }
     
@@ -180,10 +180,10 @@ public class StreamConnectionManager {
     private void closeOldStream() {
         if (requestObserver != null) {
             try {
-                logger.debug("关闭旧的 stream");
+                logger.debug("Closing old stream");
                 requestObserver.onCompleted();
             } catch (Exception e) {
-                logger.debug("关闭旧 stream 时发生异常（忽略）: {}", e.getMessage());
+                logger.debug("Exception occurred while closing old stream (ignored): {}", e.getMessage());
             }
             requestObserver = null;
         }
@@ -242,7 +242,7 @@ public class StreamConnectionManager {
             .build();
         
         sendMessage(message);
-        logger.info("已发送握手消息, requestId: {}, 心跳间隔: {}秒", requestId, keepAliveIntervalSeconds);
+        logger.info("Handshake message sent, requestId: {}, keepAlive interval: {}s", requestId, keepAliveIntervalSeconds);
     }
     
     /**
@@ -257,6 +257,12 @@ public class StreamConnectionManager {
             });
         }
         
+        // 取消旧的心跳任务（避免重复启动）
+        if (heartbeatFuture != null && !heartbeatFuture.isCancelled()) {
+            heartbeatFuture.cancel(false);
+            logger.debug("Cancelled old Ping heartbeat task");
+        }
+        
         // 使用配置的心跳间隔（毫秒转秒）
         long intervalSeconds = config.getHeartbeatInterval() / 1000;
         if (intervalSeconds <= 0) {
@@ -266,7 +272,7 @@ public class StreamConnectionManager {
         heartbeatFuture = heartbeatExecutor.scheduleAtFixedRate(() -> {
             // 检查连接状态，断开时静默跳过
             if (!connected.get()) {
-                logger.trace("连接已断开，跳过 Ping 心跳");
+                logger.trace("Connection disconnected, skipping Ping heartbeat");
                 return;
             }
             
@@ -274,14 +280,14 @@ public class StreamConnectionManager {
                 sendPing();
             } catch (IllegalStateException e) {
                 // 连接断开异常，静默处理
-                logger.trace("Ping 心跳时连接已断开");
+                logger.trace("Connection disconnected during Ping heartbeat");
             } catch (Exception e) {
-                logger.warn("发送 Ping 心跳失败: {}", e.getMessage());
-                logger.debug("Ping 心跳失败详情", e);
+                logger.warn("Failed to send Ping heartbeat: {}", e.getMessage());
+                logger.debug("Ping heartbeat failure details", e);
             }
         }, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
         
-        logger.info("Ping 心跳已启动，间隔: {} 秒", intervalSeconds);
+        logger.info("Ping heartbeat started, interval: {} seconds", intervalSeconds);
     }
     
     /**
@@ -299,7 +305,7 @@ public class StreamConnectionManager {
             .build();
         
         sendMessage(message);
-        logger.trace("已发送 Ping 心跳");
+        logger.trace("Ping heartbeat sent");
     }
     
     /**
@@ -307,7 +313,7 @@ public class StreamConnectionManager {
      */
     private synchronized void sendMessage(ClientMessage message) {
         if (requestObserver == null) {
-            throw new IllegalStateException("双向流未连接");
+            throw new IllegalStateException("Bidirectional stream not connected");
         }
         requestObserver.onNext(message);
     }
@@ -320,7 +326,7 @@ public class StreamConnectionManager {
             return;
         }
         
-        logger.info("正在关闭双向流连接...");
+        logger.info("Closing bidirectional stream connection...");
         
         // 停止心跳
         if (heartbeatFuture != null) {
@@ -332,7 +338,7 @@ public class StreamConnectionManager {
         
         // 完成所有待处理的请求
         pendingRequests.forEach((requestId, future) -> 
-            future.completeExceptionally(new RuntimeException("连接已关闭")));
+            future.completeExceptionally(new RuntimeException("Connection closed")));
         pendingRequests.clear();
         
         // 关闭流
@@ -340,12 +346,12 @@ public class StreamConnectionManager {
             try {
                 requestObserver.onCompleted();
             } catch (Exception e) {
-                logger.warn("关闭请求流失败", e);
+                logger.warn("Failed to close request stream", e);
             }
         }
         
         connectionId.set(null);
-        logger.info("双向流连接已关闭");
+        logger.info("Bidirectional stream connection closed");
     }
     
     // ========== 请求发送 ==========
@@ -360,7 +366,7 @@ public class StreamConnectionManager {
      */
     public ServerMessage sendRequest(ClientMessage message) throws TimeoutException {
         if (!connected.get()) {
-            throw new IllegalStateException("双向流未连接");
+            throw new IllegalStateException("Bidirectional stream not connected");
         }
         
         String requestId = message.getRequestId();
@@ -380,10 +386,10 @@ public class StreamConnectionManager {
         } catch (InterruptedException e) {
             pendingRequests.remove(requestId);
             Thread.currentThread().interrupt();
-            throw new RuntimeException("请求被中断", e);
+            throw new RuntimeException("Request interrupted", e);
         } catch (ExecutionException e) {
             pendingRequests.remove(requestId);
-            throw new RuntimeException("请求失败", e.getCause());
+            throw new RuntimeException("Request failed", e.getCause());
         }
     }
     
@@ -394,7 +400,7 @@ public class StreamConnectionManager {
      */
     public void sendRequestAsync(ClientMessage message) {
         if (!connected.get()) {
-            throw new IllegalStateException("双向流未连接");
+            throw new IllegalStateException("Bidirectional stream not connected");
         }
         sendMessage(message);
     }
@@ -417,7 +423,7 @@ public class StreamConnectionManager {
         
         @Override
         public void onError(Throwable t) {
-            logger.error("双向流发生错误", t);
+            logger.error("Bidirectional stream error occurred", t);
             lastError.set(t);
             connected.set(false);
             
@@ -427,8 +433,11 @@ public class StreamConnectionManager {
         
         @Override
         public void onCompleted() {
-            logger.info("双向流已完成");
+            logger.info("Bidirectional stream completed (server closed connection)");
             connected.set(false);
+            
+            // 服务端正常关闭也应该尝试重连（例如服务端重启场景）
+            reconnect();
         }
     }
     
@@ -438,25 +447,25 @@ public class StreamConnectionManager {
     private void handleServerMessage(ServerMessage message) {
         String requestId = message.getRequestId();
         
-        logger.debug("收到服务端消息: type={}, requestId={}", 
+        logger.debug("Received server message: type={}, requestId={}", 
             message.getMessageType(), requestId);
         
         // 处理响应消息（有 requestId）
         if (requestId != null && !requestId.isEmpty()) {
             CompletableFuture<ServerMessage> future = pendingRequests.remove(requestId);
             if (future != null) {
-                logger.debug("完成待处理请求: requestId={}", requestId);
+                logger.debug("Completed pending request: requestId={}", requestId);
                 future.complete(message);
                 return;
             } else {
-                logger.debug("未找到待处理请求，将作为推送消息处理: requestId={}", requestId);
+                logger.debug("Pending request not found, treating as push message: requestId={}", requestId);
             }
         }
         
         // 处理服务端主动推送（无 requestId）或未匹配的响应
         switch (message.getMessageType()) {
             case SERVER_HANDSHAKE:
-                logger.debug("开始处理握手响应");
+                logger.debug("Processing handshake response");
                 handleHandshake(message.getHandshake());
                 break;
                 
@@ -481,7 +490,7 @@ public class StreamConnectionManager {
                 break;
                 
             default:
-                logger.warn("未知的服务端消息类型: {}", message.getMessageType());
+                logger.warn("Unknown server message type: {}", message.getMessageType());
         }
     }
     
@@ -496,15 +505,15 @@ public class StreamConnectionManager {
             // 这样 restoreStateAfterReconnect() 就能正常调用业务方法
             connected.set(true);
             
-            logger.info("握手成功，connectionId: {}, tenantId: {}", 
+            logger.info("Handshake successful, connectionId: {}, tenantId: {}", 
                 handshake.getConnectionId(), handshake.getTenantId());
             
             if (handshakeListener != null) {
                 handshakeListener.accept(handshake);
             }
         } else {
-            logger.error("握手失败: {}", handshake.getMessage());
-            lastError.set(new RuntimeException("握手失败: " + handshake.getMessage()));
+            logger.error("Handshake failed: {}", handshake.getMessage());
+            lastError.set(new RuntimeException("Handshake failed: " + handshake.getMessage()));
         }
     }
     
@@ -520,7 +529,7 @@ public class StreamConnectionManager {
      * 处理服务变更事件
      */
     private void handleServiceChange(com.flux.servicecenter.registry.RegistryProto.ServiceChangeEvent event) {
-        logger.debug("收到服务变更事件: {}, 服务: {}", 
+        logger.debug("Received service change event: {}, service: {}", 
             event.getEventType(), event.getServiceName());
         
         if (serviceChangeListener != null) {
@@ -532,7 +541,7 @@ public class StreamConnectionManager {
      * 处理配置变更事件
      */
     private void handleConfigChange(com.flux.servicecenter.config.ConfigProto.ConfigChangeEvent event) {
-        logger.debug("收到配置变更事件: {}, 配置: {}", 
+        logger.debug("Received config change event: {}, config: {}", 
             event.getEventType(), event.getConfigDataId());
         
         if (configChangeListener != null) {
@@ -544,7 +553,7 @@ public class StreamConnectionManager {
      * 处理关闭通知
      */
     private void handleCloseNotification(ServerCloseNotification notification) {
-        logger.warn("收到服务端关闭通知: {}, 消息: {}, 宽限期: {}秒", 
+        logger.warn("Received server close notification: {}, message: {}, grace period: {}s", 
             notification.getReason(), notification.getMessage(), notification.getGracePeriod());
         
         if (closeListener != null) {
@@ -563,7 +572,7 @@ public class StreamConnectionManager {
      * 处理错误响应
      */
     private void handleError(ErrorResponse error) {
-        logger.error("收到服务端错误: {}, 消息: {}", error.getCode(), error.getMessage());
+        logger.error("Received server error: {}, message: {}", error.getCode(), error.getMessage());
         
         if (errorListener != null) {
             errorListener.accept(error);
@@ -584,7 +593,7 @@ public class StreamConnectionManager {
      */
     private void reconnect() {
         if (reconnecting.getAndSet(true)) {
-            logger.debug("正在重连中，跳过");
+            logger.debug("Reconnection already in progress, skipping");
             return;
         }
         
@@ -605,30 +614,30 @@ public class StreamConnectionManager {
                     attempts++;
                     
                     if (maxReconnectAttempts < 0) {
-                        logger.info("开始自动重连... 尝试 {} (无限重试模式), 等待 {}ms", attempts, delay);
+                        logger.info("Starting auto-reconnect... attempt {} (infinite retry mode), waiting {}ms", attempts, delay);
                     } else {
-                        logger.info("开始自动重连... 尝试 {}/{}, 等待 {}ms", attempts, maxReconnectAttempts, delay);
+                        logger.info("Starting auto-reconnect... attempt {}/{}, waiting {}ms", attempts, maxReconnectAttempts, delay);
                     }
                     
                     Thread.sleep(delay);
                     
                     // 尝试连接
                     connect();
-                    logger.info("自动重连成功，共尝试 {} 次", attempts);
+                    logger.info("Auto-reconnect successful after {} attempt(s)", attempts);
                     return; // 连接成功，退出重试循环
                     
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    logger.warn("自动重连被中断");
+                    logger.warn("Auto-reconnect interrupted");
                     return;
                 } catch (Exception e) {
                     if (maxReconnectAttempts < 0) {
-                        logger.warn("自动重连失败（尝试 {}），将继续重试: {}", attempts, e.getMessage());
+                        logger.warn("Auto-reconnect failed (attempt {}), will continue retrying: {}", attempts, e.getMessage());
                     } else if (attempts < maxReconnectAttempts) {
-                        logger.warn("自动重连失败（尝试 {}/{}），将继续重试: {}", 
+                        logger.warn("Auto-reconnect failed (attempt {}/{}), will continue retrying: {}", 
                                 attempts, maxReconnectAttempts, e.getMessage());
                     } else {
-                        logger.error("自动重连失败（已达最大重试次数 {}），放弃重连", maxReconnectAttempts, e);
+                        logger.error("Auto-reconnect failed (max retry attempts {} reached), giving up", maxReconnectAttempts, e);
                     }
                 }
             }
@@ -683,16 +692,16 @@ public class StreamConnectionManager {
             String encoded = Base64.getEncoder().encodeToString(credentials.getBytes());
             authMetadata.put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER),
                     "Basic " + encoded);
-            logger.debug("使用用户ID密码认证: userId={}", config.getUserId());
+            logger.debug("Using user ID/password authentication: userId={}", config.getUserId());
         } else if (config.getAuthToken() != null && !config.getAuthToken().isEmpty()) {
             // 令牌认证：使用 Bearer Token
             authMetadata.put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER),
                     "Bearer " + config.getAuthToken());
-            logger.debug("使用令牌认证");
+            logger.debug("Using token authentication");
         } else {
             // 没有认证信息
             authMetadata = null;
-            logger.debug("未配置认证信息");
+            logger.debug("No authentication configured");
         }
     }
     

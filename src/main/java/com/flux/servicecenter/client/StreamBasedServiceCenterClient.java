@@ -81,7 +81,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
      */
     public StreamBasedServiceCenterClient(ServiceCenterConfig config) {
         if (config == null) {
-            throw new IllegalArgumentException("配置不能为 null");
+            throw new IllegalArgumentException("Config must not be null");
         }
         validateConfig(config);
         this.config = config;
@@ -122,10 +122,10 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
      */
     private void validateConfig(ServiceCenterConfig config) {
         if (config.getServerHost() == null || config.getServerHost().trim().isEmpty()) {
-            throw new IllegalArgumentException("服务器地址不能为空");
+            throw new IllegalArgumentException("Server host must not be empty");
         }
         if (config.getServerPort() < 1 || config.getServerPort() > 65535) {
-            throw new IllegalArgumentException("服务器端口必须在 1-65535 范围内");
+            throw new IllegalArgumentException("Server port must be between 1 and 65535");
         }
     }
     
@@ -147,20 +147,20 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                 
                 if (isClusterMode) {
                     // 集群模式：多个地址，使用 forTarget 支持负载均衡
-                    logger.info("创建明文 gRPC Channel（集群模式）: {}", serverAddress);
+                    logger.info("Creating plaintext gRPC channel (cluster mode): {}", serverAddress);
                     channelBuilder = ManagedChannelBuilder.forTarget(serverAddress)
                             .defaultLoadBalancingPolicy("round_robin"); // 轮询负载均衡
                 } else {
                     // 单机模式：单个地址
                     if (serverAddress != null && !serverAddress.trim().isEmpty()) {
                         // 使用 serverAddress
-                        logger.info("创建明文 gRPC Channel: {}", serverAddress);
+                        logger.info("Creating plaintext gRPC channel: {}", serverAddress);
                         channelBuilder = ManagedChannelBuilder.forTarget(serverAddress);
                     } else {
                         // 使用 serverHost:serverPort
                         String host = config.getServerHost();
                         int port = config.getServerPort();
-                        logger.info("创建明文 gRPC Channel: {}:{}", host, port);
+                        logger.info("Creating plaintext gRPC channel: {}:{}", host, port);
                         channelBuilder = ManagedChannelBuilder.forAddress(host, port);
                     }
                 }
@@ -175,7 +175,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             }
             
             // ========== TLS 加密通信 ==========
-            logger.info("创建 TLS 加密 gRPC Channel: {}", serverAddress);
+            logger.info("Creating TLS gRPC channel: {}", serverAddress);
             
             // 构建 SSL 上下文
             SslContextBuilder sslContextBuilder = GrpcSslContexts.forClient();
@@ -185,9 +185,9 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             if (tlsCaPath != null && !tlsCaPath.trim().isEmpty()) {
                 File caFile = new File(tlsCaPath);
                 if (!caFile.exists()) {
-                    throw new IllegalArgumentException("CA 证书文件不存在: " + tlsCaPath);
+                    throw new IllegalArgumentException("CA certificate file does not exist: " + tlsCaPath);
                 }
-                logger.info("使用自定义 CA 证书: {}", tlsCaPath);
+                logger.info("Using custom CA certificate: {}", tlsCaPath);
                 sslContextBuilder.trustManager(caFile);
             }
             // 否则使用系统默认的信任证书（用于由可信 CA 签名的证书）
@@ -200,12 +200,12 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                 File certFile = new File(tlsCertPath);
                 File keyFile = new File(tlsKeyPath);
                 if (!certFile.exists()) {
-                    throw new IllegalArgumentException("客户端证书文件不存在: " + tlsCertPath);
+                    throw new IllegalArgumentException("Client certificate file does not exist: " + tlsCertPath);
                 }
                 if (!keyFile.exists()) {
-                    throw new IllegalArgumentException("客户端私钥文件不存在: " + tlsKeyPath);
+                    throw new IllegalArgumentException("Client private key file does not exist: " + tlsKeyPath);
                 }
-                logger.info("使用客户端证书（双向 TLS）: cert={}, key={}", tlsCertPath, tlsKeyPath);
+                logger.info("Using client certificate (mTLS): cert={}, key={}", tlsCertPath, tlsKeyPath);
                 sslContextBuilder.keyManager(certFile, keyFile);
             }
             
@@ -216,7 +216,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             
             if (isClusterMode) {
                 // 集群模式：多个地址
-                logger.info("使用 TLS 集群模式: {}", serverAddress);
+                logger.info("TLS cluster mode: {}", serverAddress);
                 channelBuilder = NettyChannelBuilder.forTarget(serverAddress)
                         .defaultLoadBalancingPolicy("round_robin"); // 轮询负载均衡
             } else {
@@ -225,17 +225,17 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                     // 解析 host:port
                     String[] parts = serverAddress.split(":");
                     if (parts.length != 2) {
-                        throw new IllegalArgumentException("TLS 服务器地址格式错误，应为 host:port，当前值: " + serverAddress);
+                        throw new IllegalArgumentException("Invalid TLS server address format, expected host:port, value: " + serverAddress);
                     }
                     String host = parts[0];
                     int port = Integer.parseInt(parts[1]);
-                    logger.info("使用 TLS 单机模式: {}:{}", host, port);
+                    logger.info("TLS single-node mode: {}:{}", host, port);
                     channelBuilder = NettyChannelBuilder.forAddress(host, port);
                 } else {
                     // 使用 serverHost:serverPort
                     String host = config.getServerHost();
                     int port = config.getServerPort();
-                    logger.info("使用 TLS 单机模式: {}:{}", host, port);
+                    logger.info("TLS single-node mode: {}:{}", host, port);
                     channelBuilder = NettyChannelBuilder.forAddress(host, port);
                 }
             }
@@ -251,9 +251,9 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                     .build();
             
         } catch (SSLException e) {
-            throw new RuntimeException("创建 TLS Channel 失败", e);
+            throw new RuntimeException("Failed to create TLS channel", e);
         } catch (Exception e) {
-            throw new RuntimeException("创建 gRPC Channel 失败", e);
+            throw new RuntimeException("Failed to create gRPC channel", e);
         }
     }
     
@@ -264,7 +264,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
         // 握手成功监听器 - 用于重连后恢复状态
         streamManager.setHandshakeListener(handshake -> {
             if (handshake.getSuccess()) {
-                logger.info("握手成功，开始恢复状态...");
+                logger.info("Handshake succeeded, restoring client state after reconnect...");
                 listenerExecutor.execute(this::restoreStateAfterReconnect);
             }
         });
@@ -281,12 +281,12 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
         
         // 错误事件监听器
         streamManager.setErrorListener(error -> {
-            logger.error("收到服务端错误: {} - {}", error.getCode(), error.getMessage());
+            logger.error("Server error from stream: code={}, message={}", error.getCode(), error.getMessage());
         });
         
         // 关闭通知监听器
         streamManager.setCloseListener(notification -> {
-            logger.warn("服务端主动关闭连接: {}", notification.getReason());
+            logger.warn("Server requested stream close: reason={}", notification.getReason());
         });
     }
     
@@ -295,11 +295,11 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
      * 注意：重连时保持原有的 nodeId 不变
      */
     private void restoreStateAfterReconnect() {
-        logger.info("开始恢复重连前的状态...");
+        logger.info("Restoring state after reconnect...");
         
         // 1. 重新注册所有节点（保持原有 nodeId）
         if (!registeredNodes.isEmpty()) {
-            logger.info("重新注册 {} 个节点...", registeredNodes.size());
+            logger.info("Re-registering {} node(s)...", registeredNodes.size());
             // 创建副本，避免并发修改
             Map<String, NodeInfo> nodesToReregister = new HashMap<>(registeredNodes);
             
@@ -308,7 +308,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                 NodeInfo nodeInfo = entry.getValue();
                 
                 try {
-                    logger.debug("重新注册节点: {} (nodeId: {})", nodeInfo.getServiceName(), nodeId);
+                    logger.debug("Re-registering node: serviceName={}, nodeId={}", nodeInfo.getServiceName(), nodeId);
                     
                     // 停止旧的心跳任务
                     stopHeartbeat(nodeId);
@@ -323,23 +323,23 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                     if (response.getSuccess()) {
                         // 重新启动心跳（使用原有的 nodeId）
                         startHeartbeat(nodeId);
-                        logger.info("节点重新注册成功: {} (nodeId: {})", nodeInfo.getServiceName(), nodeId);
+                        logger.info("Node re-registered: serviceName={}, nodeId={}", nodeInfo.getServiceName(), nodeId);
                     } else {
-                        logger.warn("节点 {} 重新注册失败: {}", nodeId, response.getMessage());
+                        logger.warn("Node re-register failed: nodeId={}, message={}", nodeId, response.getMessage());
                     }
                 } catch (Exception e) {
-                    logger.error("重新注册节点 {} 失败", nodeId, e);
+                    logger.error("Node re-register failed: nodeId={}", nodeId, e);
                 }
             }
         }
         
         // 2. 重新订阅所有服务
         if (!serviceSubscriptions.isEmpty()) {
-            logger.info("重新订阅 {} 个服务...", serviceSubscriptions.size());
+            logger.info("Re-subscribing {} service subscription(s)...", serviceSubscriptions.size());
             for (ServiceSubscription subscription : serviceSubscriptions.values()) {
                 try {
                     for (String serviceName : subscription.serviceNames) {
-                        logger.debug("重新订阅服务: {}.{}.{}", 
+                        logger.debug("Re-subscribing service: {}/{}/{}", 
                                 subscription.namespaceId, subscription.groupName, serviceName);
                         
                         RegistryProto.SubscribeServicesRequest request = RegistryProto.SubscribeServicesRequest.newBuilder()
@@ -349,21 +349,21 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                                 .build();
                         
                         businessHelper.subscribeServices(request);
-                        logger.info("服务 {} 重新订阅成功", serviceName);
+                        logger.info("Service re-subscribed: {}", serviceName);
                     }
                 } catch (Exception e) {
-                    logger.error("重新订阅服务失败", e);
+                    logger.error("Service re-subscribe failed", e);
                 }
             }
         }
         
         // 3. 重新监听所有配置
         if (!configWatches.isEmpty()) {
-            logger.info("重新监听 {} 个配置...", configWatches.size());
+            logger.info("Re-watching {} config watch(es)...", configWatches.size());
             for (ConfigWatch watch : configWatches.values()) {
                 try {
                     for (String configDataId : watch.configDataIds) {
-                        logger.debug("重新监听配置: {}.{}.{}", 
+                        logger.debug("Re-watching config: {}/{}/{}", 
                                 watch.namespaceId, watch.groupName, configDataId);
                         
                         ConfigProto.WatchConfigRequest request = ConfigProto.WatchConfigRequest.newBuilder()
@@ -373,15 +373,15 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                                 .build();
                         
                         businessHelper.watchConfig(request);
-                        logger.info("配置 {} 重新监听成功", configDataId);
+                        logger.info("Config re-watch sent: {}", configDataId);
                     }
                 } catch (Exception e) {
-                    logger.error("重新监听配置失败", e);
+                    logger.error("Config re-watch failed", e);
                 }
             }
         }
         
-        logger.info("状态恢复完成");
+        logger.info("State restore after reconnect completed");
     }
     
     // ========== 连接管理 ==========
@@ -389,12 +389,12 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
     @Override
     public synchronized void connect() {
         if (closed.get()) {
-            throw new IllegalStateException("客户端已关闭");
+            throw new IllegalStateException("Client is already closed");
         }
         
-        logger.info("正在连接到服务中心: {}:{}", config.getServerHost(), config.getServerPort());
+        logger.info("Connecting to service center: {}:{}", config.getServerHost(), config.getServerPort());
         streamManager.connect();
-        logger.info("成功连接到服务中心");
+        logger.info("Connected to service center");
     }
     
     @Override
@@ -403,7 +403,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             return;
         }
         
-        logger.info("正在关闭客户端...");
+        logger.info("Closing client...");
         
         // 1. 注销所有节点
         unregisterAllNodes();
@@ -426,10 +426,10 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
         }
         
         // 5. 关闭线程池
-        shutdownExecutor(heartbeatExecutor, "心跳");
-        shutdownExecutor(listenerExecutor, "监听器");
+        shutdownExecutor(heartbeatExecutor, "heartbeat");
+        shutdownExecutor(listenerExecutor, "listener");
         
-        logger.info("客户端已关闭");
+        logger.info("Client closed");
     }
     
     @Override
@@ -483,15 +483,15 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                 nodeInfo.setNodeId(nodeId);
                 registeredNodes.put(nodeId, nodeInfo);
                 startHeartbeat(nodeId);
-                logger.info("服务节点注册成功: {}, nodeId: {}", serviceInfo.getServiceName(), nodeId);
+                logger.info("Service node registered: serviceName={}, nodeId={}", serviceInfo.getServiceName(), nodeId);
             }
             
             return result;
             
         } catch (TimeoutException e) {
-            throw new RuntimeException("注册服务超时", e);
+            throw new RuntimeException("Register service timed out", e);
         } catch (Exception e) {
-            throw new RuntimeException("注册服务失败", e);
+            throw new RuntimeException("Register service failed", e);
         }
     }
     
@@ -519,9 +519,9 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                 return result;
             }
         } catch (TimeoutException e) {
-            throw new RuntimeException("注销服务超时", e);
+            throw new RuntimeException("Unregister service timed out", e);
         } catch (Exception e) {
-            throw new RuntimeException("注销服务失败", e);
+            throw new RuntimeException("Unregister service failed", e);
         }
     }
     
@@ -543,15 +543,15 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                 nodeInfo.setNodeId(nodeId);
                 registeredNodes.put(nodeId, nodeInfo);
                 startHeartbeat(nodeId);
-                logger.info("节点注册成功, nodeId: {}", nodeId);
+                logger.info("Node registered: nodeId={}", nodeId);
             }
             
             return result;
             
         } catch (TimeoutException e) {
-            throw new RuntimeException("注册节点超时", e);
+            throw new RuntimeException("Register node timed out", e);
         } catch (Exception e) {
-            throw new RuntimeException("注册节点失败", e);
+            throw new RuntimeException("Register node failed", e);
         }
     }
     
@@ -577,13 +577,13 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             result.setSuccess(response.getSuccess());
             result.setMessage(response.getMessage());
             
-            logger.info("节点注销成功: {}", nodeId);
+            logger.info("Node unregistered: nodeId={}", nodeId);
             return result;
             
         } catch (TimeoutException e) {
-            throw new RuntimeException("注销节点超时", e);
+            throw new RuntimeException("Unregister node timed out", e);
         } catch (Exception e) {
-            throw new RuntimeException("注销节点失败", e);
+            throw new RuntimeException("Unregister node failed", e);
         }
     }
     
@@ -616,10 +616,10 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             return result;
             
         } catch (Exception e) {
-            logger.error("获取服务信息失败", e);
+            logger.error("getService failed", e);
             GetServiceResult result = new GetServiceResult();
             result.setSuccess(false);
-            result.setMessage("获取服务信息失败: " + e.getMessage());
+            result.setMessage("getService failed: " + e.getMessage());
             return result;
         }
     }
@@ -640,15 +640,15 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             if (response.getSuccess()) {
                 return ProtoConverter.toNodeInfoList(response.getNodesList());
             } else {
-                logger.warn("发现节点失败: {}", response.getMessage());
+                logger.warn("discoverNodes failed: {}", response.getMessage());
                 return Collections.emptyList();
             }
             
         } catch (TimeoutException e) {
-            logger.error("发现节点超时", e);
+            logger.error("discoverNodes timed out", e);
             return Collections.emptyList();
         } catch (Exception e) {
-            logger.error("发现节点失败", e);
+            logger.error("discoverNodes failed", e);
             return Collections.emptyList();
         }
     }
@@ -678,7 +678,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
         subscription.listener = listener;
         serviceSubscriptions.put(subscriptionId, subscription);
         
-        logger.info("订阅服务成功: {}, subscriptionId: {}", serviceName, subscriptionId);
+        logger.info("Service subscribed: serviceName={}, subscriptionId={}", serviceName, subscriptionId);
         return subscriptionId;
     }
     
@@ -688,7 +688,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
         
         OperationResult result = new OperationResult();
         result.setSuccess(true);
-        result.setMessage("取消订阅成功");
+        result.setMessage("Unsubscribed successfully");
         return result;
     }
     
@@ -724,9 +724,9 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             return result;
             
         } catch (TimeoutException e) {
-            throw new RuntimeException("发送心跳超时", e);
+            throw new RuntimeException("Send heartbeat timed out", e);
         } catch (Exception e) {
-            throw new RuntimeException("发送心跳失败", e);
+            throw new RuntimeException("Send heartbeat failed", e);
         }
     }
     
@@ -766,9 +766,9 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             return result;
             
         } catch (TimeoutException e) {
-            throw new RuntimeException("获取配置超时", e);
+            throw new RuntimeException("Get config timed out", e);
         } catch (Exception e) {
-            throw new RuntimeException("获取配置失败", e);
+            throw new RuntimeException("Get config failed", e);
         }
     }
     
@@ -799,9 +799,9 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             return result;
             
         } catch (TimeoutException e) {
-            throw new RuntimeException("保存配置超时", e);
+            throw new RuntimeException("Save config timed out", e);
         } catch (Exception e) {
-            throw new RuntimeException("保存配置失败", e);
+            throw new RuntimeException("Save config failed", e);
         }
     }
     
@@ -824,9 +824,9 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             return result;
             
         } catch (TimeoutException e) {
-            throw new RuntimeException("删除配置超时", e);
+            throw new RuntimeException("Delete config timed out", e);
         } catch (Exception e) {
-            throw new RuntimeException("删除配置失败", e);
+            throw new RuntimeException("Delete config failed", e);
         }
     }
     
@@ -847,15 +847,15 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             if (response.getSuccess()) {
                 return ProtoConverter.toConfigInfoList(response.getConfigsList());
             } else {
-                logger.warn("列出配置失败: {}", response.getMessage());
+                logger.warn("listConfigs failed: {}", response.getMessage());
                 return Collections.emptyList();
             }
             
         } catch (TimeoutException e) {
-            logger.error("列出配置超时", e);
+            logger.error("listConfigs timed out", e);
             return Collections.emptyList();
         } catch (Exception e) {
-            logger.error("列出配置失败", e);
+            logger.error("listConfigs failed", e);
             return Collections.emptyList();
         }
     }
@@ -885,7 +885,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
         watch.listener = listener;
         configWatches.put(watchId, watch);
         
-        logger.info("监听配置成功: {}, watchId: {}", configDataId, watchId);
+        logger.info("Config watch started: configDataId={}, watchId={}", configDataId, watchId);
         return watchId;
     }
     
@@ -895,7 +895,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
         
         OperationResult result = new OperationResult();
         result.setSuccess(true);
-        result.setMessage("取消监听成功");
+        result.setMessage("Config watch removed successfully");
         return result;
     }
     
@@ -921,15 +921,15 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             if (response.getSuccess()) {
                 return ProtoConverter.toConfigHistoryList(response.getHistoryList()); // proto 中是 history，不是 histories
             } else {
-                logger.warn("获取配置历史失败: {}", response.getMessage());
+                logger.warn("getConfigHistory failed: {}", response.getMessage());
                 return Collections.emptyList();
             }
             
         } catch (TimeoutException e) {
-            logger.error("获取配置历史超时", e);
+            logger.error("getConfigHistory timed out", e);
             return Collections.emptyList();
         } catch (Exception e) {
-            logger.error("获取配置历史失败", e);
+            logger.error("getConfigHistory failed", e);
             return Collections.emptyList();
         }
     }
@@ -943,7 +943,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             try {
                 targetVersion = Long.parseLong(historyId);
             } catch (NumberFormatException e) {
-                throw new IllegalArgumentException("无效的历史记录ID: " + historyId);
+                throw new IllegalArgumentException("Invalid history id: " + historyId);
             }
             
             ConfigProto.RollbackConfigRequest request = ConfigProto.RollbackConfigRequest.newBuilder()
@@ -964,9 +964,11 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             return result;
             
         } catch (TimeoutException e) {
-            throw new RuntimeException("回滚配置超时", e);
+            throw new RuntimeException("Rollback config timed out", e);
+        } catch (IllegalArgumentException e) {
+            throw e;
         } catch (Exception e) {
-            throw new RuntimeException("回滚配置失败", e);
+            throw new RuntimeException("Rollback config failed", e);
         }
     }
     
@@ -987,7 +989,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                     ServiceChangeEvent domainEvent = ProtoConverter.toServiceChangeEvent(event);
                     subscription.listener.onServiceChange(domainEvent);
                 } catch (Exception e) {
-                    logger.error("处理服务变更事件失败", e);
+                    logger.error("handleServiceChangeEvent failed", e);
                 }
             }
         }
@@ -1008,7 +1010,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                     ConfigChangeEvent domainEvent = ProtoConverter.toConfigChangeEvent(event);
                     watch.listener.onConfigChange(domainEvent);
                 } catch (Exception e) {
-                    logger.error("处理配置变更事件失败", e);
+                    logger.error("handleConfigChangeEvent failed", e);
                 }
             }
         }
@@ -1027,11 +1029,11 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
                     try {
                         OperationResult result = sendHeartbeat(nodeId);
                         if (!result.isSuccess()) {
-                            logger.error("心跳返回错误, nodeId: {}, message: {}", 
+                            logger.error("Heartbeat rejected: nodeId={}, message={}", 
                                     nodeId, result.getMessage());
                         }
                     } catch (Exception e) {
-                        logger.error("发送心跳失败, nodeId: {}", nodeId, e);
+                        logger.error("sendHeartbeat failed: nodeId={}", nodeId, e);
                     }
                 },
                 config.getHeartbeatInterval(),
@@ -1040,7 +1042,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
         );
         
         heartbeatTasks.put(nodeId, future);
-        logger.debug("启动心跳任务, nodeId: {}, 间隔: {}ms", nodeId, config.getHeartbeatInterval());
+        logger.debug("Heartbeat task started: nodeId={}, intervalMs={}", nodeId, config.getHeartbeatInterval());
     }
     
     /**
@@ -1050,7 +1052,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
         ScheduledFuture<?> future = heartbeatTasks.remove(nodeId);
         if (future != null) {
             future.cancel(false);
-            logger.debug("停止心跳任务, nodeId: {}", nodeId);
+            logger.debug("Heartbeat task stopped: nodeId={}", nodeId);
         }
     }
     
@@ -1062,7 +1064,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             entry.getValue().cancel(false);
         }
         heartbeatTasks.clear();
-        logger.info("已停止所有心跳任务");
+        logger.info("All heartbeat tasks stopped");
     }
     
     /**
@@ -1074,7 +1076,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             try {
                 unregisterNode(nodeId);
             } catch (Exception e) {
-                logger.error("注销节点失败: {}", nodeId, e);
+                logger.error("unregisterNode failed: nodeId={}", nodeId, e);
             }
         }
     }
@@ -1086,7 +1088,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
      */
     private void ensureConnected() {
         if (!isConnected()) {
-            throw new IllegalStateException("客户端未连接，请先调用 connect() 方法");
+            throw new IllegalStateException("Client not connected; call connect() first");
         }
     }
     
@@ -1108,7 +1110,7 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
         executor.shutdown();
         try {
             if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-                logger.warn("{} 执行器未在 5 秒内关闭，强制关闭", name);
+                logger.warn("Executor '{}' did not terminate within 5s, forcing shutdown", name);
                 executor.shutdownNow();
             }
         } catch (InterruptedException e) {

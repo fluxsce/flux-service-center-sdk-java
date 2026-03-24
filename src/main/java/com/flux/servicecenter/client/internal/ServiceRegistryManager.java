@@ -191,7 +191,7 @@ public class ServiceRegistryManager {
     public RegisterServiceResult registerService(ServiceInfo serviceInfo, NodeInfo nodeInfo) {
         checkNotClosed();
         if (serviceInfo == null) {
-            throw new IllegalArgumentException("服务信息不能为 null");
+            throw new IllegalArgumentException("ServiceInfo must not be null");
         }
         
         try {
@@ -205,13 +205,13 @@ public class ServiceRegistryManager {
             RegistryProto.RegisterServiceResponse response = blockingStub
                     .withDeadlineAfter(connectionManager.getRequestTimeout(), TimeUnit.MILLISECONDS)
                     .registerService(service);
-            logger.info("服务注册响应: success={}, message={}, nodeId={}", 
+            logger.info("registerService response: success={}, message={}, nodeId={}", 
                     response.getSuccess(), response.getMessage(), response.getNodeId());
             
             RegisterServiceResult result = ProtoConverter.toRegisterServiceResult(response);
             
             if (result.isSuccess()) {
-                logger.info("服务注册成功: {}/{}/{}", 
+                logger.info("Service registered: {}/{}/{}", 
                         serviceInfo.getNamespaceId(), 
                         serviceInfo.getGroupName(), 
                         serviceInfo.getServiceName());
@@ -237,12 +237,12 @@ public class ServiceRegistryManager {
                     startHeartbeat(nodeId);
                 }
             } else {
-                logger.warn("服务注册失败: {}", result.getMessage());
+                logger.warn("Service registration failed: {}", result.getMessage());
             }
             return result;
         } catch (Exception e) {
-            logger.error("注册服务失败", e);
-            throw new RuntimeException("注册服务失败", e);
+            logger.error("registerService failed", e);
+            throw new RuntimeException("Register service failed", e);
         }
     }
     
@@ -280,19 +280,19 @@ public class ServiceRegistryManager {
             RegistryProto.RegistryResponse response = blockingStub
                     .withDeadlineAfter(connectionManager.getRequestTimeout(), TimeUnit.MILLISECONDS)
                     .unregisterService(builder.build());
-            logger.info("服务注销响应: success={}, message={}, code={}", 
+            logger.info("unregisterService response: success={}, message={}, code={}", 
                     response.getSuccess(), response.getMessage(), response.getCode());
             
             OperationResult result = ProtoConverter.toOperationResult(response);
             if (result.isSuccess()) {
-                logger.info("服务注销成功: {}/{}/{}", namespaceId, groupName, serviceName);
+                logger.info("Service unregistered: {}/{}/{}", namespaceId, groupName, serviceName);
             } else {
-                logger.warn("服务注销失败: {}", result.getMessage());
+                logger.warn("Service unregister failed: {}", result.getMessage());
             }
             return result;
         } catch (Exception e) {
-            logger.error("注销服务失败", e);
-            throw new RuntimeException("注销服务失败", e);
+            logger.error("unregisterService failed", e);
+            throw new RuntimeException("Unregister service failed", e);
         }
     }
     
@@ -319,15 +319,15 @@ public class ServiceRegistryManager {
             RegistryProto.GetServiceResponse response = blockingStub
                     .withDeadlineAfter(connectionManager.getRequestTimeout(), TimeUnit.MILLISECONDS)
                     .getService(serviceKey);
-            logger.info("获取服务响应: success={}, message={}, service={}, nodesCount={}", 
+            logger.info("getService response: success={}, message={}, service={}, nodesCount={}", 
                     response.getSuccess(), response.getMessage(), 
                     response.hasService() ? response.getService().getServiceName() : "null",
                     response.getNodesCount());
             
             return ProtoConverter.toGetServiceResult(response);
         } catch (Exception e) {
-            logger.error("获取服务信息失败", e);
-            throw new RuntimeException("获取服务信息失败", e);
+            logger.error("getService failed", e);
+            throw new RuntimeException("Get service failed", e);
         }
     }
     
@@ -344,7 +344,7 @@ public class ServiceRegistryManager {
     public RegisterNodeResult registerNode(NodeInfo nodeInfo) {
         checkNotClosed();
         if (nodeInfo == null) {
-            throw new IllegalArgumentException("节点信息不能为 null");
+            throw new IllegalArgumentException("NodeInfo must not be null");
         }
         
         try {
@@ -353,14 +353,14 @@ public class ServiceRegistryManager {
             RegistryProto.RegisterNodeResponse response = blockingStub
                     .withDeadlineAfter(connectionManager.getRequestTimeout(), TimeUnit.MILLISECONDS)
                     .registerNode(node);
-            logger.info("节点注册响应: success={}, message={}, nodeId={}", 
+            logger.info("registerNode response: success={}, message={}, nodeId={}", 
                     response.getSuccess(), response.getMessage(), response.getNodeId());
             
             RegisterNodeResult result = ProtoConverter.toRegisterNodeResult(response);
             
             if (result.isSuccess() && result.getNodeId() != null && !result.getNodeId().isEmpty()) {
                 String nodeId = result.getNodeId();
-                logger.info("节点注册成功: nodeId={}", nodeId);
+                logger.info("Node registered: nodeId={}", nodeId);
                 // 添加到节点ID池
                 NodeInfo registeredNode = new NodeInfo();
                 registeredNode.setNodeId(nodeId);
@@ -389,12 +389,12 @@ public class ServiceRegistryManager {
                 // 启动心跳
                 startHeartbeat(nodeId);
             } else {
-                logger.warn("节点注册失败: {}", result.getMessage());
+                logger.warn("Node registration failed: {}", result.getMessage());
             }
             return result;
         } catch (Exception e) {
-            logger.error("注册节点失败", e);
-            throw new RuntimeException("注册节点失败", e);
+            logger.error("registerNode failed", e);
+            throw new RuntimeException("Register node failed", e);
         }
     }
     
@@ -411,7 +411,7 @@ public class ServiceRegistryManager {
     public OperationResult unregisterNode(String nodeId) {
         checkNotClosed();
         if (nodeId == null || nodeId.isEmpty()) {
-            throw new IllegalArgumentException("节点ID不能为空");
+            throw new IllegalArgumentException("nodeId must not be null or empty");
         }
         
         try {
@@ -420,24 +420,24 @@ public class ServiceRegistryManager {
             RegistryProto.RegistryResponse response = blockingStub
                     .withDeadlineAfter(connectionManager.getRequestTimeout(), TimeUnit.MILLISECONDS)
                     .unregisterNode(nodeKey);
-            logger.info("节点注销响应: success={}, message={}, code={}", 
+            logger.info("unregisterNode response: success={}, message={}, code={}", 
                     response.getSuccess(), response.getMessage(), response.getCode());
             
             OperationResult result = ProtoConverter.toOperationResult(response);
             
             if (result.isSuccess()) {
-                logger.info("节点注销成功: nodeId={}", nodeId);
+                logger.info("Node unregistered: nodeId={}", nodeId);
                 // 从节点ID池移除
                 registeredNodes.remove(nodeId);
                 // 停止心跳
                 stopHeartbeat(nodeId);
             } else {
-                logger.warn("节点注销失败: {}", result.getMessage());
+                logger.warn("Node unregister failed: {}", result.getMessage());
             }
             return result;
         } catch (Exception e) {
-            logger.error("注销节点失败", e);
-            throw new RuntimeException("注销节点失败", e);
+            logger.error("unregisterNode failed", e);
+            throw new RuntimeException("Unregister node failed", e);
         }
     }
     
@@ -467,18 +467,18 @@ public class ServiceRegistryManager {
             RegistryProto.DiscoverNodesResponse response = blockingStub
                     .withDeadlineAfter(connectionManager.getRequestTimeout(), TimeUnit.MILLISECONDS)
                     .discoverNodes(request);
-            logger.info("发现节点响应: success={}, message={}, nodesCount={}", 
+            logger.info("discoverNodes response: success={}, message={}, nodesCount={}", 
                     response.getSuccess(), response.getMessage(), response.getNodesCount());
             
             if (response.getSuccess()) {
                 return ProtoConverter.toNodeInfoList(response.getNodesList());
             } else {
-                logger.warn("发现节点失败: {}", response.getMessage());
+                logger.warn("discoverNodes failed: {}", response.getMessage());
                 return Collections.emptyList();
             }
         } catch (Exception e) {
-            logger.error("发现节点失败", e);
-            throw new RuntimeException("发现节点失败", e);
+            logger.error("discoverNodes failed", e);
+            throw new RuntimeException("Discover nodes failed", e);
         }
     }
     
@@ -504,7 +504,7 @@ public class ServiceRegistryManager {
                            List<String> serviceNames, ServiceChangeListener listener) {
         checkNotClosed();
         if (listener == null) {
-            throw new IllegalArgumentException("监听器不能为 null");
+            throw new IllegalArgumentException("Listener must not be null");
         }
         
         String subscriptionId = UUID.randomUUID().toString();
@@ -518,14 +518,14 @@ public class ServiceRegistryManager {
                     // 将 Proto 对象转换为领域对象
                     ServiceChangeEvent event = ProtoConverter.toServiceChangeEvent(protoEvent);
                     if (event == null) {
-                        logger.warn("转换服务变更事件失败，事件为 null");
+                        logger.warn("toServiceChangeEvent returned null, skipping");
                         return;
                     }
                     
                     // 调用监听器（使用领域对象）
                     listener.onServiceChange(event);
                 } catch (Exception e) {
-                    logger.error("处理服务变更事件失败", e);
+                    logger.error("handle service change event failed", e);
                 }
             }
             
@@ -550,10 +550,10 @@ public class ServiceRegistryManager {
                 
                 if (isNormalShutdown) {
                     // 正常关闭（客户端主动关闭），记录为 INFO 级别，不重连
-                    logger.info("订阅服务变更连接已关闭（客户端主动关闭）: subscriptionId={}", subscriptionId);
+                    logger.info("Service change subscription closed (client shutdown): subscriptionId={}", subscriptionId);
                 } else {
                     // 异常关闭（服务端关闭、网络错误等），记录为 WARN 级别，触发重连
-                    logger.warn("订阅服务变更连接断开，将自动重连: subscriptionId={}, error={}", 
+                    logger.warn("Service change subscription disconnected, will reconnect: subscriptionId={}, error={}", 
                             subscriptionId, t.getMessage());
                 }
                 
@@ -568,7 +568,7 @@ public class ServiceRegistryManager {
             
             @Override
             public void onCompleted() {
-                logger.info("订阅服务变更完成: {}", subscriptionId);
+                logger.info("Service change subscription completed: {}", subscriptionId);
                 subscriptions.remove(subscriptionId);
             }
         };
@@ -584,7 +584,7 @@ public class ServiceRegistryManager {
             
             asyncStub.subscribeServices(request, responseObserver);
             
-            logger.info("已订阅服务变更: subscriptionId={}, namespaceId={}, groupName={}, services={}", 
+            logger.info("Subscribed to service changes: subscriptionId={}, namespaceId={}, groupName={}, services={}", 
                     subscriptionId, namespaceId, groupKey, serviceNames);
         } else {
             // 订阅整个命名空间/分组
@@ -597,7 +597,7 @@ public class ServiceRegistryManager {
             
             asyncStub.subscribeNamespace(request, responseObserver);
             
-            logger.info("已订阅命名空间变更: subscriptionId={}, namespaceId={}, groupName={}", 
+            logger.info("Subscribed to namespace changes: subscriptionId={}, namespaceId={}, groupName={}", 
                     subscriptionId, namespaceId, groupKey);
         }
         
@@ -613,7 +613,7 @@ public class ServiceRegistryManager {
     public void unsubscribe(String subscriptionId) {
         ServiceSubscriptionContext context = subscriptions.remove(subscriptionId);
         if (context != null) {
-            logger.info("已取消服务订阅: {}", subscriptionId);
+            logger.info("Service subscription cancelled: {}", subscriptionId);
         }
     }
     
@@ -639,7 +639,7 @@ public class ServiceRegistryManager {
     public OperationResult heartbeat(String nodeId) {
         checkNotClosed();
         if (nodeId == null || nodeId.isEmpty()) {
-            throw new IllegalArgumentException("节点ID不能为空");
+            throw new IllegalArgumentException("nodeId must not be null or empty");
         }
         
         try {
@@ -673,17 +673,17 @@ public class ServiceRegistryManager {
             RegistryProto.RegistryResponse response = blockingStub
                     .withDeadlineAfter(connectionManager.getRequestTimeout(), TimeUnit.MILLISECONDS)
                     .heartbeat(request);
-            logger.info("心跳响应: nodeId={}, success={}, message={}, code={}", 
+            logger.info("heartbeat response: nodeId={}, success={}, message={}, code={}", 
                     nodeId, response.getSuccess(), response.getMessage(), response.getCode());
             
             return ProtoConverter.toOperationResult(response);
         } catch (io.grpc.StatusRuntimeException e) {
             // gRPC 异常直接抛出，让上层处理重连逻辑
-            logger.error("心跳 gRPC 异常: nodeId={}, status={}", nodeId, e.getStatus(), e);
+            logger.error("heartbeat gRPC error: nodeId={}, status={}", nodeId, e.getStatus(), e);
             throw e; // 直接抛出，不包装
         } catch (Exception e) {
-            logger.error("发送心跳失败: nodeId={}", nodeId, e);
-            throw new RuntimeException("发送心跳失败", e);
+            logger.error("heartbeat failed: nodeId={}", nodeId, e);
+            throw new RuntimeException("Send heartbeat failed", e);
         }
     }
     
@@ -692,7 +692,7 @@ public class ServiceRegistryManager {
      */
     private void startHeartbeat(String nodeId) {
         if (heartbeatTasks.containsKey(nodeId)) {
-            logger.warn("节点 {} 的心跳任务已存在", nodeId);
+            logger.warn("Heartbeat task already exists for nodeId={}", nodeId);
             return;
         }
         
@@ -700,32 +700,32 @@ public class ServiceRegistryManager {
             try {
                 // 检查连接状态，如果断开则重连
                 if (!connectionManager.isConnected()) {
-                    logger.warn("连接已断开，尝试重连: nodeId={}", nodeId);
+                    logger.warn("Connection lost, reconnecting: nodeId={}", nodeId);
                     try {
                         connectionManager.reconnect();
                         if (!connectionManager.isConnected()) {
-                            logger.error("重连失败，跳过本次心跳: nodeId={}", nodeId);
+                            logger.error("Reconnect failed, skip this heartbeat: nodeId={}", nodeId);
                             return; // 重连失败，跳过本次心跳
                         }
-                        logger.info("重连成功，继续心跳: nodeId={}", nodeId);
+                        logger.info("Reconnected, resuming heartbeat: nodeId={}", nodeId);
                     } catch (Exception reconnectErr) {
-                        logger.error("重连异常，跳过本次心跳: nodeId={}", nodeId, reconnectErr);
+                        logger.error("Reconnect error, skip this heartbeat: nodeId={}", nodeId, reconnectErr);
                         return; // 重连异常，跳过本次心跳
                     }
                 }
                 
                 OperationResult result = heartbeat(nodeId);
                 if (!result.isSuccess()) {
-                    logger.warn("心跳失败: nodeId={}, message={}", nodeId, result.getMessage());
+                    logger.warn("Heartbeat failed: nodeId={}, message={}", nodeId, result.getMessage());
                     // 心跳失败可能是连接问题，检查连接状态
                     if (!connectionManager.isConnected()) {
-                        logger.warn("心跳失败后检测到连接断开，将在下次心跳时重连: nodeId={}", nodeId);
+                        logger.warn("Connection lost after heartbeat failure, will reconnect on next tick: nodeId={}", nodeId);
                     }
                 }
             } catch (io.grpc.StatusRuntimeException e) {
                 // gRPC 异常（如 DEADLINE_EXCEEDED、UNAVAILABLE 等）通常是连接问题
                 io.grpc.Status.Code statusCode = e.getStatus().getCode();
-                logger.error("心跳 gRPC 异常: nodeId={}, status={}, code={}", nodeId, e.getStatus(), statusCode, e);
+                logger.error("heartbeat gRPC error: nodeId={}, status={}, code={}", nodeId, e.getStatus(), statusCode, e);
                 
                 // 这些状态码通常表示连接问题，需要重连
                 if (statusCode == io.grpc.Status.Code.DEADLINE_EXCEEDED || 
@@ -734,7 +734,7 @@ public class ServiceRegistryManager {
                     statusCode == io.grpc.Status.Code.ABORTED ||
                     statusCode == io.grpc.Status.Code.CANCELLED) {
                     // 标记连接为断开状态，下次心跳时会自动重连
-                    logger.warn("检测到连接问题，标记连接为断开: nodeId={}, code={}", nodeId, statusCode);
+                    logger.warn("Connection issue detected, marking disconnected: nodeId={}, code={}", nodeId, statusCode);
                     connectionManager.markDisconnected();
                 }
             } catch (RuntimeException e) {
@@ -743,7 +743,7 @@ public class ServiceRegistryManager {
                 if (cause instanceof io.grpc.StatusRuntimeException) {
                     io.grpc.StatusRuntimeException grpcException = (io.grpc.StatusRuntimeException) cause;
                     io.grpc.Status.Code statusCode = grpcException.getStatus().getCode();
-                    logger.error("心跳异常（包装的 gRPC 异常）: nodeId={}, status={}, code={}", 
+                    logger.error("heartbeat error (wrapped gRPC): nodeId={}, status={}, code={}", 
                             nodeId, grpcException.getStatus(), statusCode, e);
                     // 处理连接问题
                     if (statusCode == io.grpc.Status.Code.DEADLINE_EXCEEDED || 
@@ -751,19 +751,19 @@ public class ServiceRegistryManager {
                         statusCode == io.grpc.Status.Code.UNAUTHENTICATED ||
                         statusCode == io.grpc.Status.Code.ABORTED ||
                         statusCode == io.grpc.Status.Code.CANCELLED) {
-                        logger.warn("检测到连接问题（从包装异常中），标记连接为断开: nodeId={}, code={}", nodeId, statusCode);
+                        logger.warn("Connection issue (wrapped cause), marking disconnected: nodeId={}, code={}", nodeId, statusCode);
                         connectionManager.markDisconnected();
                     }
                 } else {
-                    logger.error("心跳异常: nodeId={}", nodeId, e);
+                    logger.error("heartbeat error: nodeId={}", nodeId, e);
                 }
             } catch (Exception e) {
-                logger.error("心跳异常: nodeId={}", nodeId, e);
+                logger.error("heartbeat error: nodeId={}", nodeId, e);
             }
         }, 0, config.getHeartbeatInterval(), TimeUnit.MILLISECONDS);
         
         heartbeatTasks.put(nodeId, future);
-        logger.info("已启动心跳任务: nodeId={}, interval={}ms", nodeId, config.getHeartbeatInterval());
+        logger.info("Heartbeat task started: nodeId={}, intervalMs={}", nodeId, config.getHeartbeatInterval());
     }
     
     /**
@@ -773,7 +773,7 @@ public class ServiceRegistryManager {
         ScheduledFuture<?> future = heartbeatTasks.remove(nodeId);
         if (future != null) {
             future.cancel(false);
-            logger.info("已停止心跳任务: nodeId={}", nodeId);
+            logger.info("Heartbeat task stopped: nodeId={}", nodeId);
         }
     }
     
@@ -846,7 +846,7 @@ public class ServiceRegistryManager {
                     attempts++;
                     backoffMs = Math.min(backoffMs * 2, maxBackoffMs);
                     
-                    logger.info("尝试重连服务订阅: subscriptionId={}, attempt={}, backoff={}ms", 
+                    logger.info("Reconnecting service subscription: subscriptionId={}, attempt={}, backoffMs={}", 
                             subscriptionId, attempts, backoffMs);
                     
                     // 检查是否已有相同订阅
@@ -855,7 +855,7 @@ public class ServiceRegistryManager {
                         if (ctx.namespaceId.equals(namespaceId) && 
                             ctx.groupName.equals(groupName) &&
                             ctx.serviceNames != null && ctx.serviceNames.equals(serviceNames)) {
-                            logger.info("发现已有相同订阅，跳过重连: subscriptionId={}", ctx.subscriptionId);
+                            logger.info("Duplicate subscription exists, skip reconnect: subscriptionId={}", ctx.subscriptionId);
                             hasDuplicate = true;
                             break;
                         }
@@ -876,22 +876,22 @@ public class ServiceRegistryManager {
                     
                     // 重新订阅
                     String newSubscriptionId = subscribe(namespaceId, groupName, serviceNames, listener);
-                    logger.info("服务订阅重连成功: oldSubscriptionId={}, newSubscriptionId={}, attempts={}", 
+                    logger.info("Service subscription reconnected: oldSubscriptionId={}, newSubscriptionId={}, attempts={}", 
                             subscriptionId, newSubscriptionId, attempts);
                     
                     listener.onReconnected();
                     return;
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    logger.warn("服务订阅重连被中断: subscriptionId={}", subscriptionId);
+                    logger.warn("Service subscription reconnect interrupted: subscriptionId={}", subscriptionId);
                     return;
                 } catch (Exception e) {
-                    logger.warn("服务订阅重连失败: subscriptionId={}, attempt={}", subscriptionId, attempts, e);
+                    logger.warn("Service subscription reconnect failed: subscriptionId={}, attempt={}", subscriptionId, attempts, e);
                 }
             }
             
             if (!closed.get()) {
-                logger.error("服务订阅重连失败，已达到最大重试次数: subscriptionId={}, attempts={}", 
+                logger.error("Service subscription reconnect exhausted retries: subscriptionId={}, attempts={}", 
                         subscriptionId, attempts);
             }
         });
@@ -913,24 +913,24 @@ public class ServiceRegistryManager {
             return;
         }
         
-        logger.info("正在关闭服务注册发现管理器...");
+        logger.info("Closing service registry manager...");
         
         // 1. 注销所有已注册的节点（向服务端发送注销请求）
         // 需要在停止心跳之前完成，因为注销操作需要连接
         List<String> nodeIds = new ArrayList<>(registeredNodes.keySet());
         if (!nodeIds.isEmpty()) {
-            logger.info("正在注销 {} 个已注册的节点...", nodeIds.size());
+            logger.info("Unregistering {} registered node(s)...", nodeIds.size());
             for (String nodeId : nodeIds) {
                 try {
                     // 调用 unregisterNode 向服务端发送注销请求
                     unregisterNode(nodeId);
-                    logger.debug("已注销节点: {}", nodeId);
+                    logger.debug("Node unregistered: {}", nodeId);
                 } catch (Exception e) {
                     // 注销失败不影响关闭流程，只记录警告
-                    logger.warn("注销节点失败: nodeId={}, error={}", nodeId, e.getMessage());
+                    logger.warn("unregisterNode failed during close: nodeId={}, error={}", nodeId, e.getMessage());
                 }
             }
-            logger.info("节点注销完成");
+            logger.info("Node unregister phase completed");
         }
         
         // 2. 停止所有心跳任务
@@ -943,7 +943,7 @@ public class ServiceRegistryManager {
             try {
                 unsubscribe(subscriptionId);
             } catch (Exception e) {
-                logger.warn("取消订阅失败: subscriptionId={}, error={}", subscriptionId, e.getMessage());
+                logger.warn("unsubscribe failed during close: subscriptionId={}, error={}", subscriptionId, e.getMessage());
             }
         }
         
@@ -952,7 +952,7 @@ public class ServiceRegistryManager {
         heartbeatTasks.clear();
         subscriptions.clear();
         
-        logger.info("服务注册发现管理器已关闭");
+        logger.info("Service registry manager closed");
     }
     
     /**
@@ -960,10 +960,10 @@ public class ServiceRegistryManager {
      */
     private void checkNotClosed() {
         if (closed.get()) {
-            throw new IllegalStateException("服务注册发现管理器已关闭");
+            throw new IllegalStateException("Service registry manager is closed");
         }
         if (!connectionManager.isConnected()) {
-            throw new IllegalStateException("未连接，请先调用 connect()");
+            throw new IllegalStateException("Not connected; call connect() first");
         }
     }
     
