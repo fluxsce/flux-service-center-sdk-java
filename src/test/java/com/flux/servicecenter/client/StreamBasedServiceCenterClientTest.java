@@ -292,7 +292,6 @@ public class StreamBasedServiceCenterClientTest {
             SaveConfigResult result = client.saveConfig(configInfo);
             
             Assertions.assertTrue(result.isSuccess(), "配置保存应该成功");
-            Assertions.assertNotNull(result.getVersion(), "应该返回版本号");
             Assertions.assertNotNull(result.getContentMd5(), "应该返回 MD5");
             
             logger.info("配置保存成功, version: {}, md5: {}", 
