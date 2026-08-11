@@ -6,6 +6,7 @@ import com.flux.servicecenter.model.*;
 import com.flux.servicecenter.registry.RegistryProto;
 import com.flux.servicecenter.registry.ServiceRegistryGrpc;
 import io.grpc.ClientInterceptor;
+import io.grpc.Context;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
@@ -118,7 +119,7 @@ public class ServiceRegistryManager {
      * <ul>
      *   <li>订阅参数（namespaceId、groupName、serviceNames）</li>
      *   <li>监听器（listener）</li>
-     *   <li>响应观察者（responseObserver），用于重连时恢复订阅</li>
+     *   <li>可取消 Context（callContext），用于 unsubscribe 时结束服务端流</li>
      * </ul>
      * 
      * <p>生命周期：</p>
@@ -410,26 +411,35 @@ public class ServiceRegistryManager {
      */
     public OperationResult unregisterNode(String nodeId) {
         checkNotClosed();
+        return unregisterNodeInternal(nodeId);
+    }
+
+    /**
+     * 注销节点（内部实现）。
+     * <p>不检查 {@code closed}，供 {@link #close()} 在已标记关闭后仍能向服务端发送注销。</p>
+     */
+    private OperationResult unregisterNodeInternal(String nodeId) {
         if (nodeId == null || nodeId.isEmpty()) {
             throw new IllegalArgumentException("nodeId must not be null or empty");
         }
-        
+        if (!connectionManager.isConnected()) {
+            throw new IllegalStateException("Not connected; call connect() first");
+        }
+
         try {
             RegistryProto.NodeKey nodeKey = RegistryProto.NodeKey.newBuilder().setNodeId(nodeId).build();
             // 在每次调用时动态设置 deadline
             RegistryProto.RegistryResponse response = blockingStub
                     .withDeadlineAfter(connectionManager.getRequestTimeout(), TimeUnit.MILLISECONDS)
                     .unregisterNode(nodeKey);
-            logger.info("unregisterNode response: success={}, message={}, code={}", 
+            logger.info("unregisterNode response: success={}, message={}, code={}",
                     response.getSuccess(), response.getMessage(), response.getCode());
-            
+
             OperationResult result = ProtoConverter.toOperationResult(response);
-            
+
             if (result.isSuccess()) {
                 logger.info("Node unregistered: nodeId={}", nodeId);
-                // 从节点ID池移除
                 registeredNodes.remove(nodeId);
-                // 停止心跳
                 stopHeartbeat(nodeId);
             } else {
                 logger.warn("Node unregister failed: {}", result.getMessage());
@@ -509,7 +519,10 @@ public class ServiceRegistryManager {
         
         String subscriptionId = UUID.randomUUID().toString();
         String groupKey = groupName != null ? groupName : "DEFAULT_GROUP";
-        
+
+        // 可取消 Context：unsubscribe/close 时 cancel，真正结束服务端 streaming RPC
+        final Context.CancellableContext callContext = Context.current().withCancellation();
+
         // 创建响应观察者，将 Proto 对象转换为领域对象
         StreamObserver<RegistryProto.ServiceChangeEvent> responseObserver = new StreamObserver<RegistryProto.ServiceChangeEvent>() {
             @Override
@@ -521,100 +534,104 @@ public class ServiceRegistryManager {
                         logger.warn("toServiceChangeEvent returned null, skipping");
                         return;
                     }
-                    
+
                     // 调用监听器（使用领域对象）
                     listener.onServiceChange(event);
                 } catch (Exception e) {
                     logger.error("handle service change event failed", e);
                 }
             }
-            
+
             @Override
             public void onError(Throwable t) {
-                // 检查是否是正常的关闭（客户端主动关闭连接）
-                // 只有明确的客户端主动关闭（Channel shutdownNow invoked）才不重连
-                // 服务端关闭或其他网络错误都应该触发重连
-                boolean isNormalShutdown = false;
-                if (t instanceof StatusRuntimeException) {
-                    StatusRuntimeException sre = (StatusRuntimeException) t;
-                    Status status = sre.getStatus();
-                    String description = status.getDescription();
-                    // 只有明确的客户端主动关闭才认为是正常关闭
-                    // "Channel shutdownNow invoked" 表示客户端调用了 channel.shutdownNow()
-                    if (status.getCode() == Status.Code.UNAVAILABLE && 
-                        description != null && 
-                        description.contains("Channel shutdownNow invoked")) {
-                        isNormalShutdown = true;
-                    }
-                }
-                
+                // CANCELLED（主动 unsubscribe）或 channel shutdown 视为正常关闭，不重连
+                boolean isNormalShutdown = isIntentionalStreamClose(t);
+
                 if (isNormalShutdown) {
-                    // 正常关闭（客户端主动关闭），记录为 INFO 级别，不重连
                     logger.info("Service change subscription closed (client shutdown): subscriptionId={}", subscriptionId);
                 } else {
-                    // 异常关闭（服务端关闭、网络错误等），记录为 WARN 级别，触发重连
-                    logger.warn("Service change subscription disconnected, will reconnect: subscriptionId={}, error={}", 
+                    logger.warn("Service change subscription disconnected, will reconnect: subscriptionId={}, error={}",
                             subscriptionId, t.getMessage());
                 }
-                
+
                 listener.onDisconnected(t);
                 subscriptions.remove(subscriptionId);
-                
-                // 只有在非正常关闭时才自动重连
+
                 if (!isNormalShutdown) {
                     reconnectSubscription(subscriptionId, namespaceId, groupName, serviceNames, listener);
                 }
             }
-            
+
             @Override
             public void onCompleted() {
                 logger.info("Service change subscription completed: {}", subscriptionId);
                 subscriptions.remove(subscriptionId);
             }
         };
-        
-        // 根据是否指定服务名列表，选择不同的订阅方式
-        if (serviceNames != null && !serviceNames.isEmpty()) {
-            // 订阅指定的服务
-            RegistryProto.SubscribeServicesRequest request = RegistryProto.SubscribeServicesRequest.newBuilder()
-                    .setNamespaceId(namespaceId)
-                    .setGroupName(groupKey)
-                    .addAllServiceNames(serviceNames)
-                    .build();
-            
-            asyncStub.subscribeServices(request, responseObserver);
-            
-            logger.info("Subscribed to service changes: subscriptionId={}, namespaceId={}, groupName={}, services={}", 
-                    subscriptionId, namespaceId, groupKey, serviceNames);
-        } else {
-            // 订阅整个命名空间/分组
-            RegistryProto.SubscribeNamespaceRequest.Builder requestBuilder = RegistryProto.SubscribeNamespaceRequest.newBuilder()
-                    .setNamespaceId(namespaceId);
-            if (groupKey != null && !groupKey.isEmpty() && !"DEFAULT_GROUP".equals(groupKey)) {
-                requestBuilder.setGroupName(groupKey);
+
+        // 在可取消 Context 内发起订阅，使 cancel 能终止服务端流
+        callContext.run(() -> {
+            if (serviceNames != null && !serviceNames.isEmpty()) {
+                RegistryProto.SubscribeServicesRequest request = RegistryProto.SubscribeServicesRequest.newBuilder()
+                        .setNamespaceId(namespaceId)
+                        .setGroupName(groupKey)
+                        .addAllServiceNames(serviceNames)
+                        .build();
+
+                asyncStub.subscribeServices(request, responseObserver);
+
+                logger.info("Subscribed to service changes: subscriptionId={}, namespaceId={}, groupName={}, services={}",
+                        subscriptionId, namespaceId, groupKey, serviceNames);
+            } else {
+                RegistryProto.SubscribeNamespaceRequest.Builder requestBuilder = RegistryProto.SubscribeNamespaceRequest.newBuilder()
+                        .setNamespaceId(namespaceId);
+                if (groupKey != null && !groupKey.isEmpty() && !"DEFAULT_GROUP".equals(groupKey)) {
+                    requestBuilder.setGroupName(groupKey);
+                }
+                RegistryProto.SubscribeNamespaceRequest request = requestBuilder.build();
+
+                asyncStub.subscribeNamespace(request, responseObserver);
+
+                logger.info("Subscribed to namespace changes: subscriptionId={}, namespaceId={}, groupName={}",
+                        subscriptionId, namespaceId, groupKey);
             }
-            RegistryProto.SubscribeNamespaceRequest request = requestBuilder.build();
-            
-            asyncStub.subscribeNamespace(request, responseObserver);
-            
-            logger.info("Subscribed to namespace changes: subscriptionId={}, namespaceId={}, groupName={}", 
-                    subscriptionId, namespaceId, groupKey);
-        }
-        
+        });
+
         subscriptions.put(subscriptionId, new ServiceSubscriptionContext(
-                subscriptionId, namespaceId, groupName, serviceNames, listener, responseObserver));
-        
+                subscriptionId, namespaceId, groupName, serviceNames, listener, callContext));
+
         return subscriptionId;
     }
-    
+
     /**
-     * 取消订阅
+     * 取消订阅。
+     * <p>变更：除移除本地映射外，取消 gRPC Context，结束服务端 server-streaming 订阅。</p>
      */
     public void unsubscribe(String subscriptionId) {
         ServiceSubscriptionContext context = subscriptions.remove(subscriptionId);
         if (context != null) {
+            if (context.callContext != null && !context.callContext.isCancelled()) {
+                context.callContext.cancel(null);
+            }
             logger.info("Service subscription cancelled: {}", subscriptionId);
         }
+    }
+
+    /**
+     * 是否为客户端主动结束流（unsubscribe / channel shutdown），此类情况不应自动重连。
+     */
+    private static boolean isIntentionalStreamClose(Throwable t) {
+        if (!(t instanceof StatusRuntimeException)) {
+            return false;
+        }
+        Status status = ((StatusRuntimeException) t).getStatus();
+        if (status.getCode() == Status.Code.CANCELLED) {
+            return true;
+        }
+        String description = status.getDescription();
+        return status.getCode() == Status.Code.UNAVAILABLE
+                && description != null
+                && description.contains("Channel shutdownNow invoked");
     }
     
     /**
@@ -899,46 +916,48 @@ public class ServiceRegistryManager {
     
     /**
      * 关闭管理器
-     * 
+     *
      * <p>优雅关闭流程：</p>
      * <ol>
-     *   <li>注销所有已注册的节点（向服务端发送注销请求）</li>
+     *   <li>标记 closed，阻止新业务调用</li>
+     *   <li>注销所有已注册的节点（使用内部注销，不受 closed 检查阻断）</li>
      *   <li>停止所有心跳任务</li>
-     *   <li>取消所有服务订阅</li>
+     *   <li>取消所有服务订阅（cancel gRPC Context）</li>
      *   <li>清空本地缓存</li>
      * </ol>
+     *
+     * <p>变更：修复原先先置 closed 再调 {@code unregisterNode} 时被
+     * {@code checkNotClosed()} 拒绝、导致无法优雅下线的问题。</p>
      */
     public void close() {
         if (closed.getAndSet(true)) {
             return;
         }
-        
+
         logger.info("Closing service registry manager...");
-        
+
         // 1. 注销所有已注册的节点（向服务端发送注销请求）
-        // 需要在停止心跳之前完成，因为注销操作需要连接
+        // 使用 unregisterNodeInternal，避免 closed=true 后 checkNotClosed 阻断
         List<String> nodeIds = new ArrayList<>(registeredNodes.keySet());
         if (!nodeIds.isEmpty()) {
             logger.info("Unregistering {} registered node(s)...", nodeIds.size());
             for (String nodeId : nodeIds) {
                 try {
-                    // 调用 unregisterNode 向服务端发送注销请求
-                    unregisterNode(nodeId);
+                    unregisterNodeInternal(nodeId);
                     logger.debug("Node unregistered: {}", nodeId);
                 } catch (Exception e) {
-                    // 注销失败不影响关闭流程，只记录警告
                     logger.warn("unregisterNode failed during close: nodeId={}, error={}", nodeId, e.getMessage());
                 }
             }
             logger.info("Node unregister phase completed");
         }
-        
+
         // 2. 停止所有心跳任务
         for (String nodeId : new ArrayList<>(heartbeatTasks.keySet())) {
             stopHeartbeat(nodeId);
         }
-        
-        // 3. 取消所有服务订阅
+
+        // 3. 取消所有服务订阅（cancel Context，结束服务端流）
         for (String subscriptionId : new ArrayList<>(subscriptions.keySet())) {
             try {
                 unsubscribe(subscriptionId);
@@ -946,12 +965,12 @@ public class ServiceRegistryManager {
                 logger.warn("unsubscribe failed during close: subscriptionId={}, error={}", subscriptionId, e.getMessage());
             }
         }
-        
+
         // 4. 清空本地缓存
         registeredNodes.clear();
         heartbeatTasks.clear();
         subscriptions.clear();
-        
+
         logger.info("Service registry manager closed");
     }
     
@@ -970,24 +989,24 @@ public class ServiceRegistryManager {
     /**
      * 服务订阅上下文
      */
-    @SuppressWarnings("unused")
     private static class ServiceSubscriptionContext {
         final String subscriptionId;
         final String namespaceId;
         final String groupName;
         final List<String> serviceNames;
         final ServiceChangeListener listener;
-        final StreamObserver<?> responseObserver;
-        
+        /** 用于 unsubscribe 时取消服务端 streaming RPC */
+        final Context.CancellableContext callContext;
+
         ServiceSubscriptionContext(String subscriptionId, String namespaceId, String groupName,
                            List<String> serviceNames, ServiceChangeListener listener,
-                           StreamObserver<?> responseObserver) {
+                           Context.CancellableContext callContext) {
             this.subscriptionId = subscriptionId;
             this.namespaceId = namespaceId;
             this.groupName = groupName;
             this.serviceNames = serviceNames;
             this.listener = listener;
-            this.responseObserver = responseObserver;
+            this.callContext = callContext;
         }
     }
 }

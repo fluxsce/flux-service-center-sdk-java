@@ -20,24 +20,25 @@
 <dependency>
     <groupId>com.flux</groupId>
     <artifactId>flux-service-center-sdk-java</artifactId>
-    <version>2.0.6</version>
+    <version>2.0.7</version>
 </dependency>
 ```
 
 ### 基本使用
 
 ```java
-import com.flux.servicecenter.client.StreamBasedServiceCenterClient;
+import com.flux.servicecenter.client.IServiceCenterClient;
+import com.flux.servicecenter.client.ServiceCenterClients;
 import com.flux.servicecenter.config.ServiceCenterConfig;
 import com.flux.servicecenter.model.*;
 
-// 1. 创建客户端
+// 1. 创建客户端（默认 Stream 双向流）
 ServiceCenterConfig config = new ServiceCenterConfig()
     .setServerHost("localhost")
     .setServerPort(50051)
     .setNamespaceId("my-namespace");
 
-StreamBasedServiceCenterClient client = new StreamBasedServiceCenterClient(config);
+IServiceCenterClient client = ServiceCenterClients.create(config);
 client.connect();
 
 // 2. 服务注册

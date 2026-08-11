@@ -1,15 +1,19 @@
 package com.flux.servicecenter.client;
 
 /**
- * Flux Service Center 客户端接口
- * 
+ * Flux Service Center 客户端接口（对外唯一入口类型）。
+ *
  * <p>定义了服务中心客户端的所有核心功能，包括：</p>
  * <ul>
  *   <li><b>连接管理</b> - 建立连接、断开连接、健康检查</li>
  *   <li><b>服务注册发现</b> - 注册/注销服务节点、查询服务、订阅服务变更</li>
  *   <li><b>配置中心</b> - 增删改查配置、监听配置变更、配置历史、配置回滚</li>
  * </ul>
- * 
+ *
+ * <p><b>创建方式：</b>请通过 {@link ServiceCenterClients#create(ServiceCenterConfig)} 创建实例，
+ * 默认实现为双向流 {@link StreamBasedServiceCenterClient}。
+ * Classic 实现 {@link ServiceCenterClient} 已废弃，仅兼容保留。</p>
+ *
  * <p><b>快速开始示例：</b></p>
  * <pre>{@code
  * // 1. 创建配置
@@ -18,38 +22,40 @@ package com.flux.servicecenter.client;
  *     .setServerPort(50051)
  *     .setNamespaceId("my-namespace")
  *     .setGroupName("my-group");
- * 
- * // 2. 创建客户端
- * IServiceCenterClient client = new ServiceCenterClient(config);
+ *
+ * // 2. 创建客户端（默认 Stream）
+ * IServiceCenterClient client = ServiceCenterClients.create(config);
  * client.connect();
- * 
+ *
  * // 3. 注册服务节点
  * ServiceInfo service = new ServiceInfo()
  *     .setServiceName("user-service")
  *     .setProtocolType("HTTP");
- * 
+ *
  * NodeInfo node = new NodeInfo()
  *     .setIpAddress("192.168.1.100")
  *     .setPortNumber(8080)
  *     .setWeight(100);
- * 
+ *
  * RegisterServiceResult result = client.registerService(service, node);
  * System.out.println("注册成功，nodeId: " + result.getNodeId());
- * 
+ *
  * // 4. 获取配置
  * GetConfigResult configResult = client.getConfig("my-namespace", "my-group", "app-config");
  * System.out.println("配置内容: " + configResult.getConfig().getConfigContent());
- * 
+ *
  * // 5. 关闭客户端
  * client.close();
  * }</pre>
- * 
+ *
  * <p><b>线程安全性：</b>此接口的实现类应该是线程安全的，可以在多线程环境中使用。</p>
- * 
+ *
  * <p><b>资源管理：</b>客户端使用完毕后必须调用 {@link #close()} 方法释放资源，建议使用 try-with-resources 语句。</p>
- * 
+ *
  * @author shangjian
  * @version 1.0.0
+ * @see ServiceCenterClients
+ * @see StreamBasedServiceCenterClient
  * @see ServiceCenterClient
  * @see IRegistryService
  * @see IConfigService
@@ -99,10 +105,10 @@ public interface IServiceCenterClient extends IRegistryService, IConfigService, 
      * 
      * <p><b>使用示例：</b></p>
      * <pre>{@code
-     * try (IServiceCenterClient client = new ServiceCenterClient(config)) {
+     * try (IServiceCenterClient client = ServiceCenterClients.create(config)) {
      *     client.connect();
-     *     // 使用客户端
-     * } // 自动关闭
+     *     // 使用客户端（注册 / 发现 / 配置等）
+     * } // 自动执行优雅关闭流程
      * }</pre>
      */
     @Override

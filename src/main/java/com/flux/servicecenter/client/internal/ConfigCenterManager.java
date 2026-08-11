@@ -6,6 +6,7 @@ import com.flux.servicecenter.config.ServiceCenterConfig;
 import com.flux.servicecenter.listener.ConfigChangeListener;
 import com.flux.servicecenter.model.*;
 import io.grpc.ClientInterceptor;
+import io.grpc.Context;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
@@ -79,7 +80,7 @@ public class ConfigCenterManager {
      * <ul>
      *   <li>订阅参数（namespaceId、groupName、configDataIds）</li>
      *   <li>监听器（listener）</li>
-     *   <li>响应观察者（responseObserver），用于重连时恢复订阅</li>
+     *   <li>可取消 Context（callContext），用于 unwatch 时结束服务端流</li>
      * </ul>
      * 
      * <p>生命周期：</p>
@@ -290,93 +291,98 @@ public class ConfigCenterManager {
         
         String subscriptionId = UUID.randomUUID().toString();
         String groupKey = groupName != null ? groupName : "DEFAULT_GROUP";
-        
+
         ConfigProto.WatchConfigRequest request = ConfigProto.WatchConfigRequest.newBuilder()
                 .setNamespaceId(namespaceId)
                 .setGroupName(groupKey)
                 .addAllConfigDataIds(configDataIds)
                 .build();
-        
+
+        // 可取消 Context：unwatch/close 时 cancel，真正结束服务端 Watch 流
+        final Context.CancellableContext callContext = Context.current().withCancellation();
+
         // 创建响应观察者，将 Proto 对象转换为领域对象
         StreamObserver<ConfigProto.ConfigChangeEvent> responseObserver = new StreamObserver<ConfigProto.ConfigChangeEvent>() {
             @Override
             public void onNext(ConfigProto.ConfigChangeEvent protoEvent) {
                 try {
-                    // 将 Proto 对象转换为领域对象
                     ConfigChangeEvent event = ProtoConverter.toConfigChangeEvent(protoEvent);
                     if (event == null) {
                         logger.warn("toConfigChangeEvent returned null, skipping");
                         return;
                     }
-                    
-                    // 调用监听器（使用领域对象）
+
                     listener.onConfigChange(event);
                 } catch (Exception e) {
                     logger.error("handle config change event failed", e);
                 }
             }
-            
+
             @Override
             public void onError(Throwable t) {
-                // 检查是否是正常的关闭（客户端主动关闭连接）
-                // 只有明确的客户端主动关闭（Channel shutdownNow invoked）才不重连
-                // 服务端关闭或其他网络错误都应该触发重连
-                boolean isNormalShutdown = false;
-                if (t instanceof StatusRuntimeException) {
-                    StatusRuntimeException sre = (StatusRuntimeException) t;
-                    Status status = sre.getStatus();
-                    String description = status.getDescription();
-                    // 只有明确的客户端主动关闭才认为是正常关闭
-                    // "Channel shutdownNow invoked" 表示客户端调用了 channel.shutdownNow()
-                    if (status.getCode() == Status.Code.UNAVAILABLE && 
-                        description != null && 
-                        description.contains("Channel shutdownNow invoked")) {
-                        isNormalShutdown = true;
-                    }
-                }
-                
+                // CANCELLED（主动 unwatch）或 channel shutdown 视为正常关闭，不重连
+                boolean isNormalShutdown = isIntentionalStreamClose(t);
+
                 if (isNormalShutdown) {
-                    // 正常关闭（客户端主动关闭），记录为 INFO 级别，不重连
                     logger.info("Config watch stream closed (client shutdown): watcherID={}", subscriptionId);
                 } else {
-                    // 异常关闭（服务端关闭、网络错误等），记录为 WARN 级别，触发重连
-                    logger.warn("Config watch stream disconnected, will reconnect: watcherID={}, error={}", 
+                    logger.warn("Config watch stream disconnected, will reconnect: watcherID={}, error={}",
                             subscriptionId, t.getMessage());
                 }
-                
+
                 listener.onDisconnected(t);
                 subscriptions.remove(subscriptionId);
-                
-                // 只有在非正常关闭时才自动重连
+
                 if (!isNormalShutdown) {
                     reconnectWatch(subscriptionId, namespaceId, groupName, configDataIds, listener);
                 }
             }
-            
+
             @Override
             public void onCompleted() {
                 logger.info("Config watch stream completed: {}", subscriptionId);
                 subscriptions.remove(subscriptionId);
             }
         };
-        
-        asyncStub.watchConfig(request, responseObserver);
-        
+
+        callContext.run(() -> asyncStub.watchConfig(request, responseObserver));
+
         subscriptions.put(subscriptionId, new ConfigSubscriptionContext(
-                subscriptionId, namespaceId, groupName, configDataIds, listener, responseObserver));
-        
+                subscriptionId, namespaceId, groupName, configDataIds, listener, callContext));
+
         logger.info("Config watch started: subscriptionId={}, configs={}", subscriptionId, configDataIds);
         return subscriptionId;
     }
-    
+
     /**
-     * 取消监听
+     * 取消监听。
+     * <p>变更：除移除本地映射外，取消 gRPC Context，结束服务端 Watch streaming RPC。</p>
      */
     public void unwatch(String subscriptionId) {
         ConfigSubscriptionContext context = subscriptions.remove(subscriptionId);
         if (context != null) {
+            if (context.callContext != null && !context.callContext.isCancelled()) {
+                context.callContext.cancel(null);
+            }
             logger.info("Config watch cancelled: {}", subscriptionId);
         }
+    }
+
+    /**
+     * 是否为客户端主动结束流（unwatch / channel shutdown），此类情况不应自动重连。
+     */
+    private static boolean isIntentionalStreamClose(Throwable t) {
+        if (!(t instanceof StatusRuntimeException)) {
+            return false;
+        }
+        Status status = ((StatusRuntimeException) t).getStatus();
+        if (status.getCode() == Status.Code.CANCELLED) {
+            return true;
+        }
+        String description = status.getDescription();
+        return status.getCode() == Status.Code.UNAVAILABLE
+                && description != null
+                && description.contains("Channel shutdownNow invoked");
     }
     
     /**
@@ -591,24 +597,24 @@ public class ConfigCenterManager {
     /**
      * 配置订阅上下文
      */
-    @SuppressWarnings("unused")
     private static class ConfigSubscriptionContext {
         final String subscriptionId;
         final String namespaceId;
         final String groupName;
         final List<String> configDataIds;
         final ConfigChangeListener listener;
-        final StreamObserver<?> responseObserver;
-        
+        /** 用于 unwatch 时取消服务端 streaming RPC */
+        final Context.CancellableContext callContext;
+
         ConfigSubscriptionContext(String subscriptionId, String namespaceId, String groupName,
                                  List<String> configDataIds, ConfigChangeListener listener,
-                                 StreamObserver<?> responseObserver) {
+                                 Context.CancellableContext callContext) {
             this.subscriptionId = subscriptionId;
             this.namespaceId = namespaceId;
             this.groupName = groupName;
             this.configDataIds = configDataIds;
             this.listener = listener;
-            this.responseObserver = responseObserver;
+            this.callContext = callContext;
         }
     }
 }

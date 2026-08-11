@@ -15,19 +15,23 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Flux Service Center 统一客户端实现
- * 
+ * Classic 服务中心客户端实现（多 unary / server-stream）。
+ *
+ * <p><b>已废弃：</b>新代码请使用 {@link ServiceCenterClients#create(ServiceCenterConfig)}，
+ * 默认获得双向流实现 {@link StreamBasedServiceCenterClient}。
+ * 兼容入口：{@link ServiceCenterClients#createClassic(ServiceCenterConfig)}。</p>
+ *
  * <p>提供类似 Nacos 的统一客户端接口，包含服务注册发现和配置中心的所有功能。
  * 采用职责分离设计：连接管理、服务注册发现、配置中心分别由不同的管理器负责。</p>
- * 
+ *
  * <p><b>架构设计：</b></p>
  * <ul>
  *   <li>{@link ConnectionManager} - 负责连接管理、健康检查</li>
  *   <li>{@link ServiceRegistryManager} - 负责服务注册发现业务逻辑</li>
  *   <li>{@link ConfigCenterManager} - 负责配置中心业务逻辑</li>
  * </ul>
- * 
- * <p><b>快速开始示例：</b></p>
+ *
+ * <p><b>使用流程（兼容示例）：</b></p>
  * <pre>{@code
  * // 1. 创建配置
  * ServiceCenterConfig config = new ServiceCenterConfig()
@@ -35,11 +39,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *     .setServerPort(50051)
  *     .setNamespaceId("my-namespace")
  *     .setGroupName("my-group");
- * 
- * // 2. 创建客户端并连接
- * try (IServiceCenterClient client = new ServiceCenterClient(config)) {
+ *
+ * // 2. 创建客户端并连接（推荐工厂；此处展示 Classic 兼容写法）
+ * try (IServiceCenterClient client = ServiceCenterClients.createClassic(config)) {
  *     client.connect();
- *     
+ *
  *     // 3. 注册服务节点
  *     ServiceInfo service = new ServiceInfo()
  *         .setServiceName("user-service")
@@ -48,21 +52,25 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *         .setIpAddress("192.168.1.100")
  *         .setPortNumber(8080);
  *     RegisterServiceResult result = client.registerService(service, node);
- *     
+ *
  *     // 4. 获取配置
  *     GetConfigResult configResult = client.getConfig("my-namespace", "my-group", "app-config");
  *     String configContent = configResult.getConfig().getConfigContent();
  * } // 自动关闭并释放资源
  * }</pre>
- * 
+ *
  * <p><b>线程安全性：</b>此类是线程安全的，可以在多线程环境中使用。</p>
- * 
+ *
  * @author shangjian
  * @version 1.0.0
+ * @see ServiceCenterClients
+ * @see StreamBasedServiceCenterClient
  * @see IServiceCenterClient
  * @see IRegistryService
  * @see IConfigService
+ * @deprecated 请改用 {@link ServiceCenterClients#create(ServiceCenterConfig)}
  */
+@Deprecated
 public class ServiceCenterClient implements IServiceCenterClient {
     private static final Logger logger = LoggerFactory.getLogger(ServiceCenterClient.class);
     

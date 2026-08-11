@@ -24,8 +24,8 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 基于统一双向流的 Service Center 客户端实现
- * 
+ * 基于统一双向流的 Service Center 客户端实现（默认推荐实现）。
+ *
  * <p>使用单个双向 gRPC 流处理所有通信，包括：</p>
  * <ul>
  *   <li>服务注册发现</li>
@@ -33,9 +33,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   <li>实时事件推送</li>
  *   <li>心跳保持</li>
  * </ul>
- * 
+ *
+ * <p><b>创建方式：</b>业务代码请优先通过 {@link ServiceCenterClients#create(ServiceCenterConfig)}
+ * 获取 {@link IServiceCenterClient}，无需直接依赖本类。</p>
+ *
+ * <p><b>重连恢复流程：</b>握手成功后会异步执行状态恢复——重新注册本地节点（保留 nodeId）、
+ * 重新发送服务/命名空间订阅、重新发起配置 Watch，避免断连后丢失推送。</p>
+ *
  * @author shangjian
  * @version 2.0.0 (基于统一双向流)
+ * @see ServiceCenterClients
+ * @see IServiceCenterClient
  */
 public class StreamBasedServiceCenterClient implements IServiceCenterClient {
     private static final Logger logger = LoggerFactory.getLogger(StreamBasedServiceCenterClient.class);
@@ -333,21 +341,33 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             }
         }
         
-        // 2. 重新订阅所有服务
+        // 2. 重新订阅：按服务订阅走 SubscribeServices；空 serviceNames 表示命名空间订阅
         if (!serviceSubscriptions.isEmpty()) {
             logger.info("Re-subscribing {} service subscription(s)...", serviceSubscriptions.size());
             for (ServiceSubscription subscription : serviceSubscriptions.values()) {
                 try {
+                    if (subscription.serviceNames == null || subscription.serviceNames.isEmpty()) {
+                        RegistryProto.SubscribeNamespaceRequest.Builder nsBuilder =
+                                RegistryProto.SubscribeNamespaceRequest.newBuilder()
+                                        .setNamespaceId(subscription.namespaceId);
+                        if (subscription.groupName != null && !subscription.groupName.isEmpty()) {
+                            nsBuilder.setGroupName(subscription.groupName);
+                        }
+                        businessHelper.subscribeNamespace(nsBuilder.build());
+                        logger.info("Namespace re-subscribed: {}/{}",
+                                subscription.namespaceId, subscription.groupName);
+                        continue;
+                    }
                     for (String serviceName : subscription.serviceNames) {
-                        logger.debug("Re-subscribing service: {}/{}/{}", 
+                        logger.debug("Re-subscribing service: {}/{}/{}",
                                 subscription.namespaceId, subscription.groupName, serviceName);
-                        
+
                         RegistryProto.SubscribeServicesRequest request = RegistryProto.SubscribeServicesRequest.newBuilder()
                                 .setNamespaceId(subscription.namespaceId)
                                 .setGroupName(subscription.groupName)
                                 .addServiceNames(serviceName)
                                 .build();
-                        
+
                         businessHelper.subscribeServices(request);
                         logger.info("Service re-subscribed: {}", serviceName);
                     }
@@ -604,16 +624,10 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
             RegistryProto.GetServiceResponse response = registryStub
                     .withDeadlineAfter(config.getRequestTimeout(), TimeUnit.MILLISECONDS)
                     .getService(serviceKey);
-            
-            GetServiceResult result = new GetServiceResult();
-            result.setSuccess(response.getSuccess());
-            result.setMessage(response.getMessage());
-            
-            if (response.hasService()) {
-                result.setService(ProtoConverter.toServiceInfo(response.getService()));
-            }
-            
-            return result;
+
+            // 变更：使用 ProtoConverter 完整转换，包含 nodes 列表。
+            // 此前仅 setService，导致 Stream 客户端 getService 发现结果缺少节点。
+            return ProtoConverter.toGetServiceResult(response);
             
         } catch (Exception e) {
             logger.error("getService failed", e);
@@ -679,6 +693,45 @@ public class StreamBasedServiceCenterClient implements IServiceCenterClient {
         serviceSubscriptions.put(subscriptionId, subscription);
         
         logger.info("Service subscribed: serviceName={}, subscriptionId={}", serviceName, subscriptionId);
+        return subscriptionId;
+    }
+
+    /**
+     * 订阅命名空间/分组下全部服务变更（Stream {@code CLIENT_SUBSCRIBE_NAMESPACE}）。
+     *
+     * <p>本地 listener 的匹配规则：serviceNames 为空，接收该 namespace/group 下任意服务事件。</p>
+     *
+     * @param namespaceId 命名空间，空则用客户端默认
+     * @param groupName 分组，空则用客户端默认
+     * @param listener 变更监听器
+     * @return 订阅 ID，用于 {@link #unsubscribe(String)}
+     */
+    public String subscribeNamespace(String namespaceId, String groupName, ServiceChangeListener listener) {
+        ensureConnected();
+        if (listener == null) {
+            throw new IllegalArgumentException("listener is required");
+        }
+
+        String subscriptionId = UUID.randomUUID().toString();
+        String ns = getOrDefault(namespaceId, config.getNamespaceId());
+        String group = getOrDefault(groupName, config.getGroupName());
+
+        RegistryProto.SubscribeNamespaceRequest request = RegistryProto.SubscribeNamespaceRequest.newBuilder()
+                .setNamespaceId(ns)
+                .setGroupName(group)
+                .build();
+        businessHelper.subscribeNamespace(request);
+
+        ServiceSubscription subscription = new ServiceSubscription();
+        subscription.subscriptionId = subscriptionId;
+        subscription.namespaceId = ns;
+        subscription.groupName = group;
+        subscription.serviceNames = Collections.emptyList();
+        subscription.listener = listener;
+        serviceSubscriptions.put(subscriptionId, subscription);
+
+        logger.info("Namespace subscribed: namespaceId={}, groupName={}, subscriptionId={}",
+                ns, group, subscriptionId);
         return subscriptionId;
     }
     

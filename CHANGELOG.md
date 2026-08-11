@@ -8,6 +8,24 @@
 
 ## [Unreleased]（未发布）
 
+## [2.0.7] - 2026-08-11
+
+### 变更
+- **客户端架构收敛为默认 Stream**：新增工厂 {@code ServiceCenterClients.create(config)}，默认返回双向流实现；{@code ServiceCenterClient}（Classic）标记 {@code @Deprecated}，兼容入口为 {@code ServiceCenterClients.createClassic(config)}。对外类型统一为 {@code IServiceCenterClient}。
+
+### 修复
+- **Stream `getService` 缺少节点列表**：`StreamBasedServiceCenterClient.getService` 改为 `ProtoConverter.toGetServiceResult`，完整填充 `nodes`，与 Classic 行为一致。
+- **Classic 关闭时无法优雅注销节点**：`ServiceRegistryManager.close` 在 `closed=true` 后改走 `unregisterNodeInternal`，不再被 `checkNotClosed()` 阻断注销。
+- **Classic 取消订阅/监听未结束服务端流**：`unsubscribe` / `unwatch` 通过 `Context.CancellableContext.cancel` 真正取消 server-streaming；主动取消产生的 `CANCELLED` 不再触发自动重连。
+- **重连后命名空间订阅未恢复**：`restoreStateAfterReconnect` 对空 `serviceNames` 改为重新发送 `CLIENT_SUBSCRIBE_NAMESPACE`（此前循环被跳过）。
+
+### 新增
+- **真实业务场景集成测试**：`ServiceCenterBusinessScenarioTest`（需 `GATEWAY_ROOT` 或 `SERVICE_CENTER_E2E`）。自动拉起 gateway `servicecenter-testd`（SQLite），覆盖注册/发现/`getService` nodes、订阅推送、配置 Watch、`close` 优雅注销。
+- **Stream 命名空间订阅 API**：`StreamBasedServiceCenterClient.subscribeNamespace` 发送 `CLIENT_SUBSCRIBE_NAMESPACE` 并按空 serviceNames 匹配推送。
+- **业务场景补齐**：独立 `registerNode`、`unregisterService` 整服务注销、命名空间推送、配置 List/History/Rollback/Delete。
+- **认证场景集成测试**：`ServiceCenterAuthScenarioTest`（需 `GATEWAY_ROOT`，自动 `SC_E2E_ENABLE_AUTH=true`）覆盖无认证/错 Basic/错 Token 拒绝，以及正确 Basic 与 API Token 注册成功。
+- **TLS/mTLS 场景集成测试**：`ServiceCenterTlsScenarioTest` 覆盖明文拒绝、信任 CA 后 TLS 注册、mTLS 无客户端证书拒绝与携带证书成功。
+
 ## [2.0.6] - 2026-03-24
 
 ### 修复
@@ -161,6 +179,7 @@
 
 | 版本 | 发布时间 | 主要特性 |
 |------|----------|----------|
+| 2.0.7 | 2026-08-11 | 默认 Stream 工厂、getService nodes、优雅注销/取消订阅修复、业务/认证/TLS 场景测试 |
 | 2.0.6 | 2026-03-24 | 超时单位修正、断连结束 pending、心跳池下限 4（朔宁） |
 | 2.0.5 | 2026-03-24 | 服务端重启重连修复、日志国际化 |
 | 2.0.4 | 2026-03-18 | 心跳携带服务信息、心跳错误日志 |
@@ -170,6 +189,12 @@
 | 1.0.0 | 2025-10-24 | 首次发布，核心功能完整实现 |
 
 ## 升级指南
+
+### 从 2.0.6 升级到 2.0.7
+
+- 推荐改用 `ServiceCenterClients.create(config)`；`ServiceCenterClient` 已标记弃用，可用 `createClassic` 兼容
+- 对外类型统一为 `IServiceCenterClient`；Stream `getService` 现返回完整 `nodes`
+- 更新依赖即可
 
 ### 从 2.0.5 升级到 2.0.6
 
