@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package stream;
 
+// v3 数据面线协议。仅 Connect 会被注册。后续 SDK 按本文件 + proto/doc.go 实现。
+option go_package = "gateway/internal/servicecenterv3/proto;proto";
 option java_package = "com.flux.servicecenter.stream";
 option java_outer_classname = "StreamProto";
 
@@ -9,23 +11,7 @@ option java_outer_classname = "StreamProto";
 import "registry.proto";
 import "config.proto";
 
-// ========== 统一的服务中心双向流服务 ==========
-
-// ServiceCenterStream 服务中心统一双向流
-// 
-// 【核心优势】
-// 1. 实时感知客户端宕机：stream 断开时服务端立即知道（< 1秒 vs 30秒）
-// 2. 统一连接：服务注册、配置中心共用一个双向流，减少连接数
-// 3. 双向通信：服务端可主动推送变更事件（服务变更、配置变更）
-// 4. 多路复用：一个连接承载所有操作（注册、心跳、配置、订阅等）
-// 
-// 【使用流程】
-// 1. 客户端连接后立即发送 ClientHandshake（握手）
-// 2. 服务端返回 ServerHandshake（分配 connectionId）
-// 3. 客户端定期发送 ClientPing（轻量级心跳，5-10秒）
-// 4. 客户端发送业务请求（注册、配置等）
-// 5. 服务端主动推送变更事件（ServiceChangeEvent, ConfigChangeEvent）
-// 6. 连接断开时服务端自动清理所有资源
+// ServiceCenterStream 是 v3 数据面唯一服务。注册、发现、配置都走 Connect。
 service ServiceCenterStream {
   // 统一双向流（Bidirectional Streaming）
   rpc Connect(stream ClientMessage) returns (stream ServerMessage);
@@ -46,13 +32,19 @@ enum ClientMessageType {
   CLIENT_DISCOVER_NODES = 8;              // 发现节点
   CLIENT_SUBSCRIBE_SERVICES = 9;          // 订阅服务
   CLIENT_SUBSCRIBE_NAMESPACE = 10;        // 订阅命名空间
-  CLIENT_GET_CONFIG = 11;                 // 获取配置
-  CLIENT_SAVE_CONFIG = 12;                // 保存配置
-  CLIENT_DELETE_CONFIG = 13;              // 删除配置
-  CLIENT_LIST_CONFIGS = 14;               // 列出配置
-  CLIENT_WATCH_CONFIG = 15;               // 监听配置
+  CLIENT_GET_CONFIG = 11;                 // 获取已发布配置
+  CLIENT_SAVE_CONFIG = 12;                // 保存草稿（不发布、不推送）
+  CLIENT_DELETE_CONFIG = 13;              // 删除已发布配置
+  CLIENT_LIST_CONFIGS = 14;               // 列出已发布配置
+  CLIENT_WATCH_CONFIG = 15;               // 监听已发布配置
   CLIENT_GET_CONFIG_HISTORY = 16;         // 获取配置历史
   CLIENT_ROLLBACK_CONFIG = 17;            // 回滚配置
+  CLIENT_PUBLISH_CONFIG = 18;             // 将当前草稿发布
+  CLIENT_GET_DRAFT = 19;                  // 读取草稿
+  CLIENT_GET_SERVICE = 20;                // 读取服务定义
+  CLIENT_LIST_SERVICES = 21;              // 列出服务
+  CLIENT_UNSUBSCRIBE = 22;                // 取消本连接全部命名订阅
+  CLIENT_UNWATCH_CONFIG = 23;             // 取消本连接全部配置 Watch
 }
 
 // 服务端消息类型
@@ -76,6 +68,11 @@ enum ServerMessageType {
   SERVER_GET_CONFIG_HISTORY = 16;         // 获取配置历史响应
   SERVER_ROLLBACK_CONFIG = 17;            // 回滚配置响应
   SERVER_CONFIG_CHANGE = 18;              // 配置变更事件（主动推送）
+  SERVER_PUBLISH_CONFIG = 19;             // 发布配置响应
+  SERVER_GET_DRAFT = 20;                  // 读取草稿响应
+  SERVER_GET_SERVICE = 21;                // 读取服务响应
+  SERVER_LIST_SERVICES = 22;              // 列出服务响应
+  SERVER_ACK = 23;                        // 订阅 / Watch / 取消 的确认
 }
 
 // ========== 共用消息类型 ==========
@@ -89,15 +86,20 @@ message ClientMetadata {
   int64 startTime = 5;                    // 客户端启动时间戳（毫秒，用于判断客户端重启）
   map<string, string> labels = 6;         // 客户端标签（用于分组、灰度、环境标识等）
   repeated string capabilities = 7;       // 客户端能力列表（如 "compression", "encryption", "batch"）
+  
+  // 注意：hostname 和 ipAddress 已移除
+  // - ipAddress：服务端可通过 peer.FromContext(ctx) 获取真实客户端 IP
+  // - hostname：非必需，可通过 labels 传递（如 labels["hostname"] = "app-server-01"）
 }
 
 // 连接握手请求（客户端建立连接后的第一条消息）
 message ClientHandshake {
   ClientMetadata metadata = 1;            // 客户端元数据
-  string namespaceId = 2;                 // 默认命名空间ID（可选）
+  string namespaceId = 2;                 // 默认命名空间，后续请求未带 namespace 时使用
   bool keepAlive = 3;                     // 是否启用保活（默认 true）
   int32 keepAliveInterval = 4;            // 保活间隔（秒，默认 5）
-  repeated string subscribeTypes = 5;     // 订阅类型列表：["registry", "config"]
+  repeated string subscribeTypes = 5;     // 预留：["naming", "config"]
+  string protocolVersion = 6;             // 客户端协议，v3 SDK 填 "v3"
 }
 
 // 连接握手响应（服务端返回连接信息）
@@ -107,13 +109,15 @@ message ServerHandshake {
   string connectionId = 3;                // 服务端分配的连接ID（UUID）
   int64 serverTime = 4;                   // 服务端时间戳（毫秒，用于时间同步）
   int32 heartbeatInterval = 5;            // 建议的心跳间隔（秒）
-  map<string, string> serverInfo = 6;     // 服务端信息（版本、能力等）
-  string tenantId = 7;                    // 服务端分配的租户ID（从认证信息中获取）
+  map<string, string> serverInfo = 6;     // version / apiLevel / protocol
+  string tenantId = 7;                    // 仅来自鉴权，客户端不得自报
+  string protocolVersion = 8;             // 服务端协议，当前为 "v3"
 }
 
 // Ping 消息（轻量级心跳，无业务数据）
 message ClientPing {
   int64 timestamp = 1;                    // 客户端发送时间戳（毫秒）
+  string connectionId = 2;                // 连接ID（可选，用于验证）
 }
 
 // Pong 消息（Ping 响应）
@@ -143,28 +147,34 @@ message ClientMessage {
   ClientMessageType messageType = 2;      // 消息类型（便于路由、日志、监控）
   
   oneof message {
-    // ===== 连接管理 =====
+    // ===== 连接管理 (messageType: 1-2) =====
     ClientHandshake handshake = 3;        // CLIENT_HANDSHAKE: 连接握手（建立连接后的第一条消息）
     ClientPing ping = 4;                  // CLIENT_PING: Ping 心跳（轻量级，无业务数据）
     
-    // ===== 服务注册发现（来自 registry.proto）=====
+    // ===== 命名 (messageType: 3-10，载荷见 registry.proto) =====
     registry.HeartbeatRequest heartbeat = 10;           // CLIENT_HEARTBEAT: 业务心跳（携带完整服务信息）
     registry.Service registerService = 11;              // CLIENT_REGISTER_SERVICE: 注册服务
-    registry.ServiceKey unregisterService = 12;         // CLIENT_UNREGISTER_SERVICE: 注销服务
+    registry.ServiceKey unregisterService = 12;         // CLIENT_UNREGISTER_SERVICE: 只注销服务，不得带实例
     registry.Node registerNode = 13;                    // CLIENT_REGISTER_NODE: 注册节点
     registry.NodeKey unregisterNode = 14;               // CLIENT_UNREGISTER_NODE: 注销节点
     registry.DiscoverNodesRequest discoverNodes = 15;   // CLIENT_DISCOVER_NODES: 发现服务节点
-    registry.SubscribeServicesRequest subscribeServices = 16;  // CLIENT_SUBSCRIBE_SERVICES: 订阅服务（指定服务名）
-    registry.SubscribeNamespaceRequest subscribeNamespace = 17; // CLIENT_SUBSCRIBE_NAMESPACE: 订阅命名空间（所有服务）
+    registry.SubscribeServicesRequest subscribeServices = 16;  // CLIENT_SUBSCRIBE_SERVICES: 在本连接上订阅服务
+    registry.SubscribeNamespaceRequest subscribeNamespace = 17; // CLIENT_SUBSCRIBE_NAMESPACE: 在本连接上订阅命名空间
     
-    // ===== 配置中心（来自 config.proto）=====
+    // ===== 配置 (messageType: 11-17，载荷见 config.proto) =====
     config.ConfigKey getConfig = 20;                    // CLIENT_GET_CONFIG: 获取配置
     config.ConfigData saveConfig = 21;                  // CLIENT_SAVE_CONFIG: 保存配置
     config.ConfigKey deleteConfig = 22;                 // CLIENT_DELETE_CONFIG: 删除配置
     config.ListConfigsRequest listConfigs = 23;         // CLIENT_LIST_CONFIGS: 列出配置列表
     config.WatchConfigRequest watchConfig = 24;         // CLIENT_WATCH_CONFIG: 监听配置变更
-    config.GetConfigHistoryRequest getConfigHistory = 25; // CLIENT_GET_CONFIG_HISTORY: 获取配置历史
-    config.RollbackConfigRequest rollbackConfig = 26;   // CLIENT_ROLLBACK_CONFIG: 回滚配置
+    config.GetConfigHistoryRequest getConfigHistory = 25; // CLIENT_GET_CONFIG_HISTORY
+    config.RollbackConfigRequest rollbackConfig = 26;   // CLIENT_ROLLBACK_CONFIG
+    config.PublishConfigRequest publishConfig = 27;     // CLIENT_PUBLISH_CONFIG
+    config.ConfigKey getDraft = 28;                     // CLIENT_GET_DRAFT
+    registry.ServiceKey getService = 29;                // CLIENT_GET_SERVICE
+    registry.ListServicesRequest listServices = 30;     // CLIENT_LIST_SERVICES
+    Empty unsubscribe = 31;                             // CLIENT_UNSUBSCRIBE
+    Empty unwatchConfig = 32;                           // CLIENT_UNWATCH_CONFIG
   }
 }
 
@@ -175,136 +185,47 @@ message ServerMessage {
   ServerMessageType messageType = 2;      // 消息类型（便于路由、日志、监控）
   
   oneof message {
-    // ===== 连接管理 =====
+    // ===== 连接管理 (messageType: 1-4) =====
     ServerHandshake handshake = 3;        // SERVER_HANDSHAKE: 连接握手响应
     ServerPong pong = 4;                  // SERVER_PONG: Pong 响应
-    ServerCloseNotification close = 5;    // SERVER_CLOSE_NOTIFICATION: 服务端主动关闭连接通知
-    ErrorResponse error = 6;              // SERVER_ERROR_RESPONSE: 通用错误响应
+    ServerCloseNotification close = 5;    // SERVER_CLOSE: 服务端主动关闭连接通知
+    ErrorResponse error = 6;              // SERVER_ERROR: 通用错误响应
     
-    // ===== 服务注册发现响应（来自 registry.proto）=====
-    registry.RegistryResponse heartbeat = 10;           // SERVER_HEARTBEAT_RESPONSE: 心跳响应
-    registry.RegisterServiceResponse registerService = 11; // SERVER_REGISTER_SERVICE_RESPONSE: 注册服务响应
-    registry.RegistryResponse unregisterService = 12;   // SERVER_UNREGISTER_SERVICE_RESPONSE: 注销服务响应
-    registry.RegisterNodeResponse registerNode = 13;    // SERVER_REGISTER_NODE_RESPONSE: 注册节点响应
-    registry.RegistryResponse unregisterNode = 14;      // SERVER_UNREGISTER_NODE_RESPONSE: 注销节点响应
-    registry.DiscoverNodesResponse discoverNodes = 15;  // SERVER_DISCOVER_NODES_RESPONSE: 发现服务节点响应
-    registry.ServiceChangeEvent serviceChange = 16;     // SERVER_SERVICE_CHANGE_EVENT: 服务变更事件（服务端主动推送）
+    // ===== 服务注册发现响应 (messageType: 5-11，来自 registry.proto) =====
+    registry.RegistryResponse heartbeat = 10;           // SERVER_HEARTBEAT: 心跳响应
+    registry.RegisterServiceResponse registerService = 11; // SERVER_REGISTER_SERVICE: 注册服务响应
+    registry.RegistryResponse unregisterService = 12;   // SERVER_UNREGISTER_SERVICE: 注销服务响应
+    registry.RegisterNodeResponse registerNode = 13;    // SERVER_REGISTER_NODE: 注册节点响应
+    registry.RegistryResponse unregisterNode = 14;      // SERVER_UNREGISTER_NODE: 注销节点响应
+    registry.DiscoverNodesResponse discoverNodes = 15;  // SERVER_DISCOVER_NODES: 发现服务节点响应
+    registry.ServiceChangeEvent serviceChange = 16;     // SERVER_SERVICE_CHANGE: 服务变更事件（服务端主动推送）
     
-    // ===== 配置中心响应（来自 config.proto）=====
-    config.GetConfigResponse getConfig = 20;            // SERVER_GET_CONFIG_RESPONSE: 获取配置响应
-    config.SaveConfigResponse saveConfig = 21;          // SERVER_SAVE_CONFIG_RESPONSE: 保存配置响应
-    config.ConfigResponse deleteConfig = 22;            // SERVER_DELETE_CONFIG_RESPONSE: 删除配置响应
-    config.ListConfigsResponse listConfigs = 23;        // SERVER_LIST_CONFIGS_RESPONSE: 列出配置列表响应
-    config.GetConfigHistoryResponse getConfigHistory = 24; // SERVER_GET_CONFIG_HISTORY_RESPONSE: 获取配置历史响应
-    config.RollbackConfigResponse rollbackConfig = 25;  // SERVER_ROLLBACK_CONFIG_RESPONSE: 回滚配置响应
-    config.ConfigChangeEvent configChange = 26;         // SERVER_CONFIG_CHANGE_EVENT: 配置变更事件（服务端主动推送）
+    // ===== 配置中心响应 (messageType: 12-18，来自 config.proto) =====
+    config.GetConfigResponse getConfig = 20;            // SERVER_GET_CONFIG: 获取配置响应
+    config.SaveConfigResponse saveConfig = 21;          // SERVER_SAVE_CONFIG: 保存配置响应
+    config.ConfigResponse deleteConfig = 22;            // SERVER_DELETE_CONFIG: 删除配置响应
+    config.ListConfigsResponse listConfigs = 23;        // SERVER_LIST_CONFIGS: 列出配置列表响应
+    config.GetConfigHistoryResponse getConfigHistory = 24; // SERVER_GET_CONFIG_HISTORY: 获取配置历史响应
+    config.RollbackConfigResponse rollbackConfig = 25;  // SERVER_ROLLBACK_CONFIG
+    config.ConfigChangeEvent configChange = 26;         // SERVER_CONFIG_CHANGE
+    config.SaveConfigResponse publishConfig = 27;       // SERVER_PUBLISH_CONFIG
+    config.GetConfigResponse getDraft = 28;             // SERVER_GET_DRAFT
+    registry.GetServiceResponse getService = 29;        // SERVER_GET_SERVICE
+    registry.ListServicesResponse listServices = 30;    // SERVER_LIST_SERVICES
+    Ack ack = 31;                                       // SERVER_ACK
   }
 }
 
-// ========== 使用说明 ==========
+// Empty 用于无载荷请求（取消订阅 / 取消 Watch）。
+message Empty {}
 
-// 【客户端示例流程】
-// 
-// 1. 建立连接并发送握手：
-//    ClientMessage.newBuilder()
-//      .setRequestId("req-001")
-//      .setMessageType(ClientMessageType.CLIENT_HANDSHAKE)
-//      .setHandshake(ClientHandshake.newBuilder()
-//        .setMetadata(ClientMetadata.newBuilder()
-//          .setClientId(UUID.randomUUID().toString())
-//          .setClientVersion("1.0.0")
-//          .setSdkVersion("1.0.0")
-//          .setLanguage("Java")
-//          .setStartTime(System.currentTimeMillis())
-//          .putLabels("env", "production")
-//          .build())
-//        .setNamespaceId("public")
-//        .setKeepAlive(true)
-//        .setKeepAliveInterval(5)
-//        .addSubscribeTypes("registry")
-//        .addSubscribeTypes("config")
-//        .build())
-//      .build()
-// 
-// 2. 接收握手响应：
-//    ServerMessage {
-//      requestId: "req-001",
-//      messageType: SERVER_HANDSHAKE,
-//      handshake: { success: true, connectionId: "conn-xxx", tenantId: "tenant-001" }
-//    }
-// 
-// 3. 定期发送 Ping（5-10秒）：
-//    ClientMessage.newBuilder()
-//      .setRequestId(UUID.randomUUID().toString())
-//      .setMessageType(ClientMessageType.CLIENT_PING)
-//      .setPing(ClientPing.newBuilder()
-//        .setTimestamp(System.currentTimeMillis())
-//        .build())
-//      .build()
-// 
-// 4. 发送业务请求（注册节点）：
-//    ClientMessage.newBuilder()
-//      .setRequestId("req-003")
-//      .setMessageType(ClientMessageType.CLIENT_REGISTER_NODE)
-//      .setRegisterNode(Node.newBuilder()
-//        .setServiceName("user-service")
-//        .setIpAddress("192.168.1.100")
-//        .setPortNumber(8080)
-//        .build())
-//      .build()
-// 
-// 5. 接收业务响应：
-//    ServerMessage {
-//      requestId: "req-003",
-//      messageType: SERVER_REGISTER_NODE_RESPONSE,
-//      registerNode: { success: true, nodeId: "node-xxx" }
-//    }
-// 
-// 6. 接收服务端主动推送（无 requestId）：
-//    ServerMessage {
-//      messageType: SERVER_SERVICE_CHANGE_EVENT,
-//      serviceChange: { eventType: "NODE_ADDED", ... }
-//    }
-//    ServerMessage {
-//      messageType: SERVER_CONFIG_CHANGE_EVENT,
-//      configChange: { eventType: "CONFIG_UPDATED", ... }
-//    }
-// 
-// 7. 客户端订阅服务：
-//    ClientMessage.newBuilder()
-//      .setRequestId("req-004")
-//      .setMessageType(ClientMessageType.CLIENT_SUBSCRIBE_SERVICES)
-//      .setSubscribeServices(SubscribeServicesRequest.newBuilder()
-//        .setNamespaceId("public")
-//        .setGroupName("DEFAULT_GROUP")
-//        .addServiceNames("user-service")
-//        .build())
-//      .build()
-// 
-// 8. 客户端监听配置：
-//    ClientMessage.newBuilder()
-//      .setRequestId("req-005")
-//      .setMessageType(ClientMessageType.CLIENT_WATCH_CONFIG)
-//      .setWatchConfig(WatchConfigRequest.newBuilder()
-//        .setNamespaceId("public")
-//        .setGroupName("DEFAULT_GROUP")
-//        .addConfigDataIds("app.properties")
-//        .build())
-//      .build()
+// Ack 用于订阅、Watch 及其取消的确认。requestId 必须回传。
+message Ack {
+  bool success = 1;
+  string message = 2;
+  string code = 3;
+}
 
-// 【优势对比】
-// 
-// 旧方案（独立 RPC）：
-//   - 2个服务（ServiceRegistry + ConfigCenter）
-//   - 多个独立的 RPC 调用
-//   - 需要 Server-Side Streaming 订阅
-//   - 宕机感知延迟（心跳超时）
-// 
-// 新方案（统一双向流）：
-//   - 1个服务（ServiceCenterStream）
-//   - 1个双向流承载所有操作
-//   - 实时双向通信
-//   - 即时宕机感知（< 1秒）
-//   - 更少的连接数
-//   - 更简单的客户端实现
+// 约定：本文件是 v3 唯一 RPC。requestId 用于请求-响应配对；
+// 服务端主动推送（SERVICE_CHANGE / CONFIG_CHANGE）的 requestId 为空。
 

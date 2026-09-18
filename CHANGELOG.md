@@ -8,6 +8,19 @@
 
 ## [Unreleased]（未发布）
 
+### 变更
+- **gRPC 升级到 1.83.1 / protobuf 3.25.9**：覆盖 CVE-2023-33953（1.54.2 受影响）与 CVE-2026-47244（Netty HTTP/2 并发流上限），与官方 `grpc-protobuf` 依赖对齐。
+
+## [3.0.0] - 2026-09-18
+
+### 变更
+- **只保留对外调用 API**：`IServiceCenterClient` / `ServiceCenterClients.create` / 领域模型与监听器保持可直接升级。
+- **内部按网关 v3 重写**：单连接 `ServiceCenterStream.Connect`，握手 `protocolVersion=v3`；删除 Classic、Unary、2.x Manager。
+- `saveConfig` 语义对齐 v3：先 `saveDraft` 再 `publishConfig`。新增 `saveDraft` / `publishConfig` / `getDraft`。
+- `unregisterService(nodeId != null)` 转 `unregisterNode`。
+- 默认 `namespaceId` 不再写死旧环境值。
+- **线协议收口**：状态/事件改为 enum，`ephemeral` 为 optional bool，时间戳为 Unix 毫秒；`ServiceKey.nodeId` reserved；列表支持 `pageSize`/`pageToken`。对外 Java 模型仍用原字符串（`Y`/`N`、`UP`、`NODE_ADDED`）。
+
 ## [2.0.7] - 2026-08-11
 
 ### 变更

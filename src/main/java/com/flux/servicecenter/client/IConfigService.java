@@ -149,6 +149,37 @@ public interface IConfigService {
      * @throws RuntimeException 如果保存失败
      */
     SaveConfigResult saveConfig(ConfigInfo config);
+
+    /**
+     * 只保存草稿，不发布、不推送。
+     *
+     * <p>与 {@link #saveConfig(ConfigInfo)} 的区别：saveConfig 会先存草稿再发布。</p>
+     *
+     * @param config 配置信息，不能为 null
+     * @return 保存草稿结果
+     */
+    SaveConfigResult saveDraft(ConfigInfo config);
+
+    /**
+     * 将当前草稿发布为新版本并推送给 Watch。
+     *
+     * @param namespaceId 命名空间ID
+     * @param groupName 分组名
+     * @param configDataId 配置ID，不能为空
+     * @param changeReason 变更原因，可为 null
+     * @return 发布结果，含新版本号
+     */
+    SaveConfigResult publishConfig(String namespaceId, String groupName, String configDataId, String changeReason);
+
+    /**
+     * 读取尚未发布的草稿。
+     *
+     * @param namespaceId 命名空间ID
+     * @param groupName 分组名
+     * @param configDataId 配置ID，不能为空
+     * @return 草稿内容；不存在时 success 为 false
+     */
+    GetConfigResult getDraft(String namespaceId, String groupName, String configDataId);
     
     /**
      * 获取配置内容

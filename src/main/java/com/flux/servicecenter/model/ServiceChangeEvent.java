@@ -80,6 +80,13 @@ public class ServiceChangeEvent {
     public List<NodeInfo> getAllNodes() {
         return allNodes;
     }
+
+    /**
+     * 与 {@link #getAllNodes()} 相同，保留给升级前按 getNodes() 取列表的调用方。
+     */
+    public List<NodeInfo> getNodes() {
+        return allNodes;
+    }
     
     public void setAllNodes(List<NodeInfo> allNodes) {
         this.allNodes = allNodes;

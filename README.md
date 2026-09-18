@@ -1,8 +1,9 @@
 # Flux Service Center SDK for Java
 
+[![CI](https://github.com/fluxsce/flux-service-center-sdk-java/actions/workflows/ci.yml/badge.svg)](https://github.com/fluxsce/flux-service-center-sdk-java/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Java](https://img.shields.io/badge/Java-8%2B-orange.svg)](https://www.oracle.com/java/)
-[![gRPC](https://img.shields.io/badge/gRPC-1.58+-green.svg)](https://grpc.io/)
+[![Java](https://img.shields.io/badge/Java-17%2B-orange.svg)](https://www.oracle.com/java/)
+[![gRPC](https://img.shields.io/badge/gRPC-1.83.1-green.svg)](https://grpc.io/)
 
 > 企业级服务注册中心与配置中心 Java SDK
 
@@ -18,9 +19,9 @@
 
 ```xml
 <dependency>
-    <groupId>com.flux</groupId>
-    <artifactId>flux-service-center-sdk-java</artifactId>
-    <version>2.0.7</version>
+    <groupId>io.github.fluxsce</groupId>
+    <artifactId>flux-service-center-sdk</artifactId>
+    <version>3.0.0</version>
 </dependency>
 ```
 
@@ -32,34 +33,36 @@ import com.flux.servicecenter.client.ServiceCenterClients;
 import com.flux.servicecenter.config.ServiceCenterConfig;
 import com.flux.servicecenter.model.*;
 
-// 1. 创建客户端（默认 Stream 双向流）
+// 1. 创建 v3 客户端（ServiceCenterClients.create）
 ServiceCenterConfig config = new ServiceCenterConfig()
     .setServerHost("localhost")
-    .setServerPort(50051)
-    .setNamespaceId("my-namespace");
+    .setServerPort(12004)
+    .setNamespaceId("my-namespace")
+    .setGroupName("my-group");
 
 IServiceCenterClient client = ServiceCenterClients.create(config);
 client.connect();
 
 // 2. 服务注册
-ServiceInfo service = new ServiceInfo()
-    .setServiceName("user-service")
-    .setServiceType("HTTP");
+ServiceInfo service = new ServiceInfo();
+service.setServiceName("user-service");
+service.setServiceType("INTERNAL");
 
-NodeInfo node = new NodeInfo()
-    .setIpAddress("192.168.1.100")
-    .setPortNumber(8080);
+NodeInfo node = new NodeInfo();
+node.setIpAddress("192.168.1.100");
+node.setPortNumber(8080);
 
 RegisterServiceResult result = client.registerService(service, node);
 
 // 3. 服务发现
-List<NodeInfo> nodes = client.discoverNodes("my-namespace", "my-group", "user-service", true);
+GetServiceResult discovered = client.getService("my-namespace", "my-group", "user-service");
+List<NodeInfo> nodes = discovered.getHealthyNodes();
 
-// 4. 配置管理
-ConfigInfo configInfo = new ConfigInfo()
-    .setConfigDataId("app.config")
-    .setConfigContent("key=value")
-    .setContentType("properties");
+// 4. 配置管理（saveConfig = 先 saveDraft 再 publishConfig）
+ConfigInfo configInfo = new ConfigInfo();
+configInfo.setConfigDataId("app.config");
+configInfo.setConfigContent("key=value");
+configInfo.setContentType("properties");
 
 client.saveConfig(configInfo);
 
@@ -74,7 +77,7 @@ client.close();
 ```java
 ServiceCenterConfig config = new ServiceCenterConfig()
     // 集群地址（逗号分隔，支持故障切换和负载均衡）
-    .setServerAddress("node1:50051,node2:50051,node3:50051")
+    .setServerAddress("node1:12004,node2:12004,node3:12004")
     .setNamespaceId("production")
     .setHeartbeatInterval(5000)
     .setReconnectInterval(3000)
@@ -86,7 +89,7 @@ ServiceCenterConfig config = new ServiceCenterConfig()
 
 ```java
 ServiceCenterConfig config = new ServiceCenterConfig()
-    .setServerAddress("secure-server:50051")
+    .setServerAddress("secure-server:12004")
     .setEnableTls(true)
     .setTlsCaPath("/etc/certs/ca.crt")
     .setTlsCertPath("/etc/certs/client.crt")  // 双向 TLS
@@ -97,12 +100,15 @@ ServiceCenterConfig config = new ServiceCenterConfig()
 ### 认证配置
 
 ```java
-// 用户ID/密码认证
+// 用户ID/密码认证（与 authToken 二选一）
 ServiceCenterConfig config = new ServiceCenterConfig()
-    .setServerAddress("auth-server:50051")
+    .setServerAddress("auth-server:12004")
     .setUserId("user-001")
     .setPassword("secure-password")
     .setNamespaceId("production");
+
+// 或使用 API Token
+config.setAuthToken("your-api-token");
 ```
 
 ## 📚 主要功能
@@ -114,7 +120,8 @@ ServiceCenterConfig config = new ServiceCenterConfig()
 client.registerService(serviceInfo, nodeInfo);
 
 // 发现服务
-List<NodeInfo> nodes = client.discoverNodes(namespace, group, serviceName, healthyOnly);
+GetServiceResult discovered = client.getService(namespace, group, serviceName);
+List<NodeInfo> nodes = discovered.getHealthyNodes();
 
 // 订阅服务变更
 String subscriptionId = client.subscribeService(namespace, group, serviceName, 
@@ -129,21 +136,28 @@ client.unsubscribe(subscriptionId);
 ### 配置管理
 
 ```java
-// 保存配置
+// 保存并发布配置（内部先 saveDraft 再 publishConfig）
 client.saveConfig(configInfo);
+
+// 只写草稿 / 单独发布
+client.saveDraft(configInfo);
+client.publishConfig(namespace, group, configId, "release");
 
 // 获取配置
 GetConfigResult result = client.getConfig(namespace, group, configId);
 
 // 监听配置变更
-String watchId = client.watchConfig(namespace, group, configId, 
+String watchId = client.watchConfig(namespace, group, configId,
     event -> {
-        System.out.println("配置变更: " + event.getNewContent());
+        ConfigInfo changed = event.getConfig();
+        if (changed != null) {
+            System.out.println("配置变更: " + changed.getConfigContent());
+        }
     });
 
-// 配置历史与回滚
-List<ConfigHistory> history = client.getConfigHistory(namespace, group, configId, 10);
-client.rollbackConfig(namespace, group, configId, targetVersion);
+// 配置历史与回滚（historyId 即 configVersion）
+List<ConfigHistory> history = client.getConfigHistory(namespace, group, configId, 1, 10);
+client.rollbackConfig(namespace, group, configId, history.get(0).getHistoryId());
 ```
 
 ## 🔧 配置参数
@@ -152,13 +166,16 @@ client.rollbackConfig(namespace, group, configId, targetVersion);
 |------|------|--------|------|
 | `serverHost` | String | localhost | 服务器主机 |
 | `serverPort` | int | 12004 | 服务器端口 |
-| `serverAddress` | String | - | 服务器地址（支持集群） |
+| `serverAddress` | String | - | 完整地址，优先于 host/port；逗号分隔多个地址做故障切换 |
 | `enableTls` | boolean | false | 是否启用 TLS |
-| `userId` / `password` | String | - | 认证信息 |
-| `namespaceId` | String | - | 命名空间 |
+| `tlsCaPath` / `tlsCertPath` / `tlsKeyPath` | String | - | CA / 客户端证书 / 私钥路径 |
+| `userId` / `password` | String | - | 用户认证（与 authToken 二选一） |
+| `authToken` | String | - | API Token 认证 |
+| `namespaceId` | String | 空 | 命名空间，需由调用方按环境设置 |
 | `groupName` | String | DEFAULT_GROUP | 分组名称 |
 | `heartbeatInterval` | long | 5000 | 心跳间隔（毫秒） |
 | `reconnectInterval` | long | 3000 | 重连间隔（毫秒） |
+| `maxReconnectAttempts` | int | 10 | 最大重连次数，`-1` 表示无限重连 |
 | `requestTimeout` | long | 30000 | 请求超时（毫秒） |
 | `keepAliveTime` | long | 30000 | Keep-Alive 间隔（毫秒） |
 | `keepAliveTimeout` | long | 10000 | Keep-Alive 超时（毫秒） |
@@ -169,7 +186,7 @@ client.rollbackConfig(namespace, group, configId, targetVersion);
 ### 使用 Try-With-Resources
 
 ```java
-try (StreamBasedServiceCenterClient client = new StreamBasedServiceCenterClient(config)) {
+try (IServiceCenterClient client = ServiceCenterClients.create(config)) {
     client.connect();
     // 业务逻辑
 } // 自动关闭
@@ -179,7 +196,7 @@ try (StreamBasedServiceCenterClient client = new StreamBasedServiceCenterClient(
 
 ```java
 ServiceCenterConfig config = new ServiceCenterConfig()
-    .setServerAddress("sc1:50051,sc2:50051,sc3:50051")  // 集群
+    .setServerAddress("sc1:12004,sc2:12004,sc3:12004")  // 集群
     .setEnableTls(true)                                  // TLS 加密
     .setTlsCaPath("/etc/certs/ca.crt")
     .setUserId("prod-user")                              // 认证
@@ -225,7 +242,7 @@ ps aux | grep service-center
 openssl x509 -in /path/to/ca.crt -text -noout
 
 # 测试连接
-openssl s_client -connect server:50051 -CAfile /path/to/ca.crt
+openssl s_client -connect server:12004 -CAfile /path/to/ca.crt
 ```
 
 ## 📝 更新日志

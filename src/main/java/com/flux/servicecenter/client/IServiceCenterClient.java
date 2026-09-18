@@ -1,5 +1,7 @@
 package com.flux.servicecenter.client;
 
+import com.flux.servicecenter.config.ServiceCenterConfig;
+
 /**
  * Flux Service Center 客户端接口（对外唯一入口类型）。
  *
@@ -10,9 +12,8 @@ package com.flux.servicecenter.client;
  *   <li><b>配置中心</b> - 增删改查配置、监听配置变更、配置历史、配置回滚</li>
  * </ul>
  *
- * <p><b>创建方式：</b>请通过 {@link ServiceCenterClients#create(ServiceCenterConfig)} 创建实例，
- * 默认实现为双向流 {@link StreamBasedServiceCenterClient}。
- * Classic 实现 {@link ServiceCenterClient} 已废弃，仅兼容保留。</p>
+ * <p><b>创建方式：</b>请通过 {@link ServiceCenterClients#create(ServiceCenterConfig)} 创建实例。
+ * 3.0 只保留 v3 双向流实现。</p>
  *
  * <p><b>快速开始示例：</b></p>
  * <pre>{@code
@@ -55,7 +56,6 @@ package com.flux.servicecenter.client;
  * @author shangjian
  * @version 1.0.0
  * @see ServiceCenterClients
- * @see StreamBasedServiceCenterClient
  * @see ServiceCenterClient
  * @see IRegistryService
  * @see IConfigService
@@ -76,7 +76,8 @@ public interface IServiceCenterClient extends IRegistryService, IConfigService, 
      * <ul>
      *   <li>此方法会阻塞直到连接建立成功或失败</li>
      *   <li>连接失败会抛出 RuntimeException</li>
-     *   <li>客户端支持自动重连，无需手动处理连接断开</li>
+     *   <li>首次 connect 会把 serverAddress 列表各试一遍；全部失败即抛错，不会后台再试</li>
+     *   <li>曾经连上后掉线才会按 reconnectInterval / maxReconnectAttempts 自动重连并切换地址</li>
      * </ul>
      * 
      * @throws RuntimeException 如果连接失败

@@ -60,9 +60,32 @@ public class GetServiceResult {
     public List<NodeInfo> getNodes() {
         return nodes;
     }
+
+    /**
+     * 当前节点里健康且未下线的子集，便于升级后的负载均衡调用。
+     */
+    public List<NodeInfo> getHealthyNodes() {
+        if (nodes == null) {
+            return List.of();
+        }
+        return nodes.stream()
+                .filter(GetServiceResult::isHealthy)
+                .toList();
+    }
     
     public void setNodes(List<NodeInfo> nodes) {
         this.nodes = nodes;
+    }
+
+    private static boolean isHealthy(NodeInfo node) {
+        if (node == null) {
+            return false;
+        }
+        String healthy = node.getHealthyStatus();
+        String status = node.getInstanceStatus();
+        boolean healthyOk = healthy == null || healthy.isBlank() || "HEALTHY".equalsIgnoreCase(healthy);
+        boolean up = status == null || status.isBlank() || "UP".equalsIgnoreCase(status);
+        return healthyOk && up;
     }
     
     @Override

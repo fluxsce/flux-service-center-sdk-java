@@ -24,7 +24,7 @@ public class ServiceCenterConfigTest {
         assertNull(config.getAuthToken());
         assertNull(config.getUserId());
         assertNull(config.getPassword());
-        assertEquals("ns_F41J68C80A50C28G68A06I53A49J4", config.getNamespaceId());
+        assertEquals("", config.getNamespaceId());
         assertEquals("DEFAULT_GROUP", config.getGroupName());
         assertEquals(5000L, config.getHeartbeatInterval());
         assertEquals(3000L, config.getReconnectInterval());
@@ -39,7 +39,7 @@ public class ServiceCenterConfigTest {
         ServiceCenterConfig config = new ServiceCenterConfig();
         config.setServerHost("example.com");
         assertEquals("example.com", config.getServerHost());
-        assertEquals("example.com:50051", config.getServerAddress());
+        assertEquals("example.com:12004", config.getServerAddress());
     }
 
     @Test
@@ -101,7 +101,7 @@ public class ServiceCenterConfigTest {
     @Test
     public void testSetNamespaceId() {
         ServiceCenterConfig config = new ServiceCenterConfig();
-        assertEquals("ns_F41J68C80A50C28G68A06I53A49J4", config.getNamespaceId());
+        assertEquals("", config.getNamespaceId());
         
         config.setNamespaceId("ns_test");
         assertEquals("ns_test", config.getNamespaceId());

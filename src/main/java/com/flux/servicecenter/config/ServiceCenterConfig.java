@@ -62,8 +62,8 @@ public class ServiceCenterConfig {
     /** 密码，用于用户ID密码认证（可选，与 authToken 二选一） */
     private String password;
     
-    /** 命名空间ID，默认 ns_F41J68C80A50C28G68A06I53A49J4 */
-    private String namespaceId = "ns_F41J68C80A50C28G68A06I53A49J4";
+    /** 命名空间ID，默认空，由调用方按环境设置 */
+    private String namespaceId = "";
     
     /** 分组名，默认 DEFAULT_GROUP */
     private String groupName = "DEFAULT_GROUP";
@@ -112,7 +112,7 @@ public class ServiceCenterConfig {
      */
     public ServiceCenterConfig setServerHost(String serverHost) {
         if (serverHost == null || serverHost.trim().isEmpty()) {
-            throw new IllegalArgumentException("服务器地址不能为空");
+            throw new IllegalArgumentException("server host must not be empty");
         }
         this.serverHost = serverHost;
         return this;
@@ -136,7 +136,7 @@ public class ServiceCenterConfig {
      */
     public ServiceCenterConfig setServerPort(int serverPort) {
         if (serverPort < 1 || serverPort > 65535) {
-            throw new IllegalArgumentException("端口号必须在 1-65535 范围内");
+            throw new IllegalArgumentException("server port must be between 1 and 65535");
         }
         this.serverPort = serverPort;
         return this;
@@ -280,7 +280,7 @@ public class ServiceCenterConfig {
      */
     public ServiceCenterConfig setHeartbeatInterval(long heartbeatInterval) {
         if (heartbeatInterval <= 0) {
-            throw new IllegalArgumentException("心跳间隔必须大于 0");
+            throw new IllegalArgumentException("heartbeatInterval must be greater than 0");
         }
         this.heartbeatInterval = heartbeatInterval;
         return this;
@@ -309,7 +309,7 @@ public class ServiceCenterConfig {
      */
     public ServiceCenterConfig setReconnectInterval(long reconnectInterval) {
         if (reconnectInterval <= 0) {
-            throw new IllegalArgumentException("重连间隔必须大于 0");
+            throw new IllegalArgumentException("reconnectInterval must be greater than 0");
         }
         this.reconnectInterval = reconnectInterval;
         return this;
@@ -371,7 +371,7 @@ public class ServiceCenterConfig {
      */
     public ServiceCenterConfig setRequestTimeout(long requestTimeout) {
         if (requestTimeout <= 0) {
-            throw new IllegalArgumentException("请求超时时间必须大于 0");
+            throw new IllegalArgumentException("requestTimeout must be greater than 0");
         }
         this.requestTimeout = requestTimeout;
         return this;
@@ -454,7 +454,7 @@ public class ServiceCenterConfig {
     /**
      * 获取命名空间ID
      * 
-     * @return 命名空间ID，默认 "ns_F41J68C80A50C28G68A06I53A49J4"
+     * @return 命名空间ID，默认空字符串
      */
     public String getNamespaceId() {
         return namespaceId;
@@ -471,7 +471,7 @@ public class ServiceCenterConfig {
      */
     public ServiceCenterConfig setNamespaceId(String namespaceId) {
         if (namespaceId == null || namespaceId.trim().isEmpty()) {
-            throw new IllegalArgumentException("命名空间ID不能为空");
+            throw new IllegalArgumentException("namespaceId must not be empty");
         }
         this.namespaceId = namespaceId;
         return this;
@@ -527,6 +527,9 @@ public class ServiceCenterConfig {
      * </ul>
      * 
      * <p>如果设置了此字段，将优先使用此字段；否则使用 serverHost:serverPort 组合。</p>
+     *
+     * <p>Cluster: the SDK keeps one stream and fails over across this list after handshake
+     * failure or a dropped connection. It does not write the same request to every peer.</p>
      * 
      * @param serverAddress 服务器地址，格式：单个地址 "host:port" 或集群地址 "host1:port1,host2:port2,..."
      * @return 当前配置对象，支持链式调用
@@ -539,11 +542,11 @@ public class ServiceCenterConfig {
             for (String addr : addresses) {
                 String trimmed = addr.trim();
                 if (trimmed.isEmpty()) {
-                    throw new IllegalArgumentException("服务器地址不能包含空的地址项");
+                    throw new IllegalArgumentException("serverAddress must not contain an empty entry");
                 }
                 // 验证格式：host:port
                 if (!trimmed.matches("^[^:]+:\\d+$")) {
-                    throw new IllegalArgumentException("服务器地址格式不正确，应为 'host:port' 或 'host1:port1,host2:port2,...'，当前值: " + trimmed);
+                    throw new IllegalArgumentException("serverAddress must be 'host:port' or 'host1:port1,host2:port2,...', got: " + trimmed);
                 }
             }
             this.serverAddress = serverAddress;
@@ -597,7 +600,7 @@ public class ServiceCenterConfig {
      */
     public ServiceCenterConfig setKeepAliveTime(long keepAliveTime) {
         if (keepAliveTime <= 0) {
-            throw new IllegalArgumentException("Keep-Alive 时间间隔必须大于 0");
+            throw new IllegalArgumentException("keepAliveTime must be greater than 0");
         }
         this.keepAliveTime = keepAliveTime;
         return this;
@@ -625,7 +628,7 @@ public class ServiceCenterConfig {
      */
     public ServiceCenterConfig setKeepAliveTimeout(long keepAliveTimeout) {
         if (keepAliveTimeout <= 0) {
-            throw new IllegalArgumentException("Keep-Alive 超时时间必须大于 0");
+            throw new IllegalArgumentException("keepAliveTimeout must be greater than 0");
         }
         this.keepAliveTimeout = keepAliveTimeout;
         return this;
@@ -683,7 +686,7 @@ public class ServiceCenterConfig {
      */
     public ServiceCenterConfig setMaxInboundMessageSize(int maxInboundMessageSize) {
         if (maxInboundMessageSize <= 0) {
-            throw new IllegalArgumentException("最大入站消息大小必须大于 0");
+            throw new IllegalArgumentException("maxInboundMessageSize must be greater than 0");
         }
         this.maxInboundMessageSize = maxInboundMessageSize;
         return this;

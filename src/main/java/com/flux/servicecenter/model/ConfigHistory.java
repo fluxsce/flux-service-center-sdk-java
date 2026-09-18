@@ -145,6 +145,27 @@ public class ConfigHistory {
     public void setChangeTime(String changeTime) {
         this.changeTime = changeTime;
     }
+
+    /**
+     * 回滚用版本号。v3 的 historyId 就是 configVersion。
+     */
+    public String getHistoryId() {
+        return String.valueOf(configVersion);
+    }
+
+    /**
+     * 与 {@link #getChangeTime()} 相同。
+     */
+    public String getCreateTime() {
+        return changeTime;
+    }
+
+    /**
+     * 与 {@link #getChangedBy()} 相同。
+     */
+    public String getCreatedBy() {
+        return changedBy;
+    }
     
     @Override
     public String toString() {
